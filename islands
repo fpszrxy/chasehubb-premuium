@@ -8,12 +8,6 @@ repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer and game.P
 
 
 local Loaded1,Loaded2,PromptLib1, Loaded3, Loaded4 = true,false,loadstring(game:HttpGet("https://raw.githubusercontent.com/AlexR32/Roblox/main/Useful/PromptLibrary.lua"))(), true, false
-if workspace.PrivateServer.Value == false then
-    PromptLib1("Warning!","It's not recommended to use the script on a public server, as other players may notice and report you.\nAre you sure you want to load Chasesdd?",{
-        {Text = "Yes",LayoutOrder = 0,Primary = false,Callback = function() Loaded2 = true end},
-        {Text = "No",LayoutOrder = 0,Primary = true,Callback = function() end}
-    }) repeat task.wait(1) until Loaded2
-end
 
 
 -------------------------------
