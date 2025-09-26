@@ -3295,8 +3295,8 @@ end)
 
 -- right section
 HomeTabRightSection = HomeTab:CreateRightSection("Credits")
-HomeTabRightSection:CreateLabel("Creator: _vastly",false)
-HomeTabRightSection:CreateLabel("Scripter: _vastly",false)
+HomeTabRightSection:CreateLabel("Creator: chasesdd",false)
+HomeTabRightSection:CreateLabel("Scripter: chasesdd",false)
 HomeTabRightSection:CreateLabel("Helpers: xe, Jxnt, Burhan",true)
 
 -- right section 2
