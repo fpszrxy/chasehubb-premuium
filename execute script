@@ -40,6 +40,7 @@ end
 
 -- Map of friendly names -> URLs
 local URLS = {
+    ["islands"] = "https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/islands",
     ["bladeball"] = "https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/Bladeball",
     ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/99nights",
     ["basketball legends"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
@@ -74,7 +75,8 @@ local PLACEID_URLS = {
     [121864768012064] = URLS["fish it"],
     
     -- Anime Eternal
-    [90462358603255] = URLS["anime eternal"]
+    [90462358603255] = URLS["anime eternal"],
+    [4872321990] = URLS["islands"]
 }
 
 -- =========================
@@ -696,6 +698,10 @@ if title ~= "" then
     elseif title:find("anime%s*eternal") or title:find("animeeternal") then
         local loading_gui = show_premium_loading()
         run_remote(URLS["anime eternal"], "Anime Eternal")
+        matched = true
+         elseif title:find("islands") or title:find("islands") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["islands"], "Islands")
         matched = true
     end
 end
