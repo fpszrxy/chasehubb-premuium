@@ -730,7 +730,7 @@ local function AutoAbility()
     return false
 end
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/lib%20gui"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/lib%20gui?token=GHSAT0AAAAAADMBWOYFCJFB5TPK52WPDFLG2HF6THA"))()
 local UI = Library.new()
 UI:load()
 
