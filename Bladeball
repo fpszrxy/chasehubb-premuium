@@ -896,7 +896,7 @@ end
 
 local Library = loadstring(
     game:HttpGet(
-        'https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/lib%20gui?token=GHSAT0AAAAAADMBWOYEO67VOC7WLQGEV4JM2HIPHVA'
+        'https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/lib%20gui'
     )
 )()
 local UI = Library.new()
