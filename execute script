@@ -1,6 +1,6 @@
 local URLS = {
-    ['bladeball'] = 'https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/Bladeball?token=GHSAT0AAAAAADM3F7B7ONJJLN4H4GAVGJBC2HIPR3Q',
-    ['plants vs brainrots'] = 'https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/pvb?token=GHSAT0AAAAAADM3F7B7BYZJDK476555E3UE2HIPTAA'
+    ['bladeball'] = 'https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/Bladeball',
+    ['plants vs brainrots'] = 'https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/pvb'
 }
 
 local GAME_IDS = {
