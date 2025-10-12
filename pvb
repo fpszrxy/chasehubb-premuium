@@ -403,7 +403,7 @@ Main:Toggle({
                     then
                         EquipBat()
                     end
-                    task.wait(0.25)
+                    task.wait(0.05)
                 end
             end)
 
@@ -411,7 +411,7 @@ Main:Toggle({
             task.spawn(function()
                 while AutoFarm do
                     UpdateBrainrotsCache()
-                    task.wait(0.25)
+                    task.wait(0.05)
                 end
             end)
 
@@ -434,7 +434,7 @@ Main:Toggle({
                         and currentTarget:FindFirstChild('BrainrotHitbox')
                     then
                         InstantWarpToBrainrot(currentTarget)
-                        task.wait(0.1) -- Small delay after TP to ensure position update
+                        task.wait(0.01) -- Small delay after TP to ensure position update
                         local targets = {}
                         local brainrotsFolder = workspace:FindFirstChild(
                             'ScriptedMap'
