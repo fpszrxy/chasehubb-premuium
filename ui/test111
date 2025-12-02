@@ -1,0 +1,4299 @@
+--// Services
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local PathfindingService = game:GetService("PathfindingService")
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local CollectionService = game:GetService("CollectionService")
+local Lighting = game:GetService("Lighting")
+
+--// Variables
+local httpRequest = (syn and syn.request) or httprequest or request or (http and http.request)
+
+local currentExecutor = identifyexecutor()
+
+local client = Players.LocalPlayer
+local character = client.Character
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+local camera = workspace.CurrentCamera
+local mouse = client:GetMouse()
+
+local controls = require(client.PlayerScripts.PlayerModule):GetControls()
+local pizzaPlanet = require(client.PlayerScripts.Modules.JobHandler.PizzaPlanetDelivery)
+
+local clientStats = ReplicatedStorage.Stats[client.Name]
+local mainUi = client:WaitForChild("PlayerGui").MainGUI
+local clientScripts = client:WaitForChild("PlayerScripts").Modules
+
+local modules = {
+	vehicleman = require(ReplicatedStorage.Modules.VehicleService.VehicleData),
+	GUIHandler = require(client.PlayerScripts.Modules["_Utilities"].GUIHandler),
+	notification = require(clientScripts._Utilities.GUIHandler),
+	jobManager = require(clientScripts.JobHandler),
+	wallService = require(ReplicatedStorage.Modules.WallService),
+	stats = ReplicatedStorage.Stats[client.Name],
+	objectService = require(ReplicatedStorage.Modules.ObjectService),
+	materialData = require(ReplicatedStorage.Modules._Data.MaterialData),
+	itemService = require(ReplicatedStorage.Modules.ItemService),
+	plotService = require(ReplicatedStorage.Modules.PlotService),
+	fenceService = require(ReplicatedStorage.Modules._Objects.FenceService),
+	roofService = require(ReplicatedStorage.Modules.RoofService),
+	groundService = require(ReplicatedStorage.Modules.GroundService),
+	polygon = require(ReplicatedStorage.Modules._Utilities.Polygon),
+	typeService = require(ReplicatedStorage.Modules.TypeService),
+	resizeService = require(ReplicatedStorage.Modules.ResizeService),
+	foodService = require(ReplicatedStorage.Modules.FoodService),
+	equipmentService = require(ReplicatedStorage.Modules.EquipmentService),
+	billService = require(ReplicatedStorage.Modules.BillService),
+	staminaService = require(ReplicatedStorage.Modules.StaminaService),
+	skillData = require(ReplicatedStorage.Modules._Data.SkillData),
+	colorService = require(ReplicatedStorage.Modules.ColorService),
+	dataService = require(ReplicatedStorage.Modules.DataService),
+	PizzaPlanetDelivery = require(clientScripts.JobHandler.PizzaPlanetDelivery),
+	BloxBurgersLineCook = require(clientScripts.JobHandler.BloxBurgersEmployee.BloxBurgersLineCook),
+	
+	jobs = {},
+}
+
+local getRemote = debug.getupvalue(modules.dataService.FireServer, 5);
+
+--// Functions
+do 
+	function fireServer(args)
+		local clonedArgs = table.clone(args);
+		local remote = getRemote(clonedArgs.Type);
+
+		if (not remote) then return end; 
+
+		clonedArgs.Type = nil;
+
+		return remote:FireServer(clonedArgs);
+	end
+
+	function invokeServer(args)
+		local clonedArgs = table.clone(args)
+		local remote = getRemote(clonedArgs.Type, true);
+
+		if (not remote) then return end; 
+
+		clonedArgs.Type = nil;
+
+		return remote:InvokeServer(clonedArgs);
+	end
+
+	function applyModifiers()
+		local function safeFindFirstChildWhichIsA(instance, className)
+			for _, child in ipairs(instance:GetChildren()) do
+				if child:IsA(className) then
+					return child
+				end
+			end
+			return nil
+		end
+
+		local function addModifier(part, label)
+			local existing = safeFindFirstChildWhichIsA(part, "PathfindingModifier")
+			if existing then
+				pcall(function()
+					existing:Destroy()
+				end)
+			end
+
+			local mod = Instance.new("PathfindingModifier")
+			mod.Name = "Synix_Mod"
+			mod.PassThrough = false
+			mod.Label = label
+			mod.Parent = part
+		end
+
+		local function safeDescendants(container, callback)
+			if container and container:IsA("Instance") then
+				for _, part in ipairs(container:GetDescendants()) do
+					if part:IsA("BasePart") then
+						callback(part)
+					end
+				end
+			end
+		end
+
+		local function safeChildren(container, callback)
+			if container and container:IsA("Instance") then
+				for _, part in ipairs(container:GetChildren()) do
+					if part:IsA("BasePart") then
+						callback(part)
+					end
+				end
+			end
+		end
+
+		for _, plot in ipairs(workspace:WaitForChild("Plots"):GetChildren()) do
+			local ground = plot:FindFirstChild("Ground")
+			if ground then
+				addModifier(ground, "Terrain")
+			end
+		end
+
+		safeDescendants(workspace.Environment.Props:FindFirstChild("Fences"), function(part)
+			addModifier(part, "PierFences")
+		end)
+
+		safeDescendants(workspace.Environment.RoadsNetwork.Network:FindFirstChild("Parking"), function(part)
+			addModifier(part, "Road")
+		end)
+
+		safeDescendants(workspace.Environment.RoadsNetwork.Network:FindFirstChild("Roads"), function(part)
+			addModifier(part, "Road")
+		end)
+
+		safeDescendants(Workspace.Environment.Locations.Beach:FindFirstChild("CityBeach"), function(part)
+			addModifier(part, "PierFences")
+		end)
+
+		safeDescendants(workspace.Environment.RoadsNetwork:FindFirstChild("Sidewalk"), function(part)
+			addModifier(part, "Pavement")
+		end)
+
+		safeDescendants(workspace.Environment:FindFirstChild("RoadsNetwork"), function(part)
+			if part.Name == "Crosswalk_Cobble" then
+				addModifier(part, "Road")
+			end
+		end)
+
+		safeDescendants(workspace.Environment:FindFirstChild("Foliage"), function(part)
+			addModifier(part, "PierFences")
+			part.CanCollide = false
+		end)
+
+		safeChildren(workspace.Environment.Terrain:FindFirstChild("Bushes"), function(part)
+			addModifier(part, "PierFences")
+			part.CanCollide = false
+		end)
+
+		safeDescendants(workspace.Environment:FindFirstChild("World Lights"), function(part)
+			addModifier(part, "PierFences")
+			part.CanCollide = false
+		end)
+
+		safeDescendants(game.Workspace.Environment:FindFirstChild("DetailObjects"), function(part)
+			addModifier(part, "PierFences")
+			part.CanCollide = false
+		end)
+
+		local ring = workspace.Environment.Locations.City.PizzaPlanet.Exterior:FindFirstChild("Ring")
+		if ring then
+			addModifier(ring, "IgnoreArea")
+		end
+
+		local pier = workspace.Environment.Locations.Beach:FindFirstChild("Pier")
+		if pier then
+			local fenceFolder = pier.Geometry:FindFirstChild("Fence")
+			if fenceFolder then
+				safeDescendants(fenceFolder, function(part)
+					addModifier(part, "PierFences")
+				end)
+			end
+
+			local plankFolder = pier.Exterior:FindFirstChild("FloorPlanks")
+			if plankFolder then
+				for _, v in ipairs(plankFolder:GetChildren()) do
+					if v:IsA("BasePart") and (v.Name == "WidePlanks" or v.Name == "FourWideplanks") then
+						addModifier(v, "Planks")
+					end
+				end
+			end
+		end
+
+		do
+        local part = Instance.new("Part")
+        part.Name = "Block Area2"
+        part.Anchored = true              
+        part.CanCollide = false           
+        part.Transparency = 1             
+        part.Size = Vector3.new(3.49395751953125, 26.293842315673828, 55.75885772705078)
+        part.CFrame = CFrame.new(-194.503098, 14.4752417, -360.611115)
+        part.Parent = workspace
+	    addModifier(part, "IgnoreArea")
+		end
+
+		do
+        local part = Instance.new("Part")
+        part.Name = "BlockArea1"
+        part.Anchored = true             
+        part.CanCollide = false          
+        part.Transparency = 1            
+        part.Size = Vector3.new(3.49395751953125, 26.293842315673828, 60.39299011230469)
+        part.CFrame = CFrame.new(-194.503098, 14.4752417, -450.493958)
+        part.Parent = workspace
+        addModifier(part, "IgnoreArea")
+		end
+
+
+		safeDescendants(workspace.Environment:FindFirstChild("RentalVehicles"), function(part)
+			addModifier(part, "PierFences")
+			part.CanCollide = false
+		end)
+	end
+
+	function lookAt(position)
+		local character = client.Character or client.CharacterAdded:Wait()
+		local hrp = character:WaitForChild("HumanoidRootPart")
+
+		local flatLookVector = Vector3.new(position.X, hrp.Position.Y, position.Z) - hrp.Position
+		flatLookVector = flatLookVector.Unit
+		local newCFrame = CFrame.new(hrp.Position, hrp.Position + flatLookVector)
+		hrp.CFrame = newCFrame
+		camera.CFrame = CFrame.new(camera.CFrame.Position, camera.CFrame.Position + hrp.CFrame.LookVector)
+	end
+
+	function randomWait(min, max)
+		local waitTime = math.random() * (max - min) + min
+		task.wait(waitTime)
+		return waitTime
+	end
+
+	function pathfind(position, settings)
+		local controls = require(client.PlayerScripts:WaitForChild("PlayerModule")):GetControls()
+		controls:Disable()
+
+		local character = client.Character or client.CharacterAdded:Wait()
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+		local humanoid = character:WaitForChild("Humanoid")
+
+		local path
+		if type(settings) == "table" then
+			path = PathfindingService:CreatePath(settings)
+		else
+			path = PathfindingService:CreatePath()
+		end
+
+		path:ComputeAsync(humanoidRootPart.Position, position)
+
+		for _, waypoint in next, path:GetWaypoints() do
+			humanoid:MoveTo(waypoint.Position)
+			if waypoint.Action == Enum.PathWaypointAction.Jump then
+				humanoid.Jump = true
+			end
+			humanoid.MoveToFinished:Wait()
+		end
+
+		controls:Enable()
+	end
+
+	function beautifyMoney(cash)
+		cash = type(cash) == "number" and cash or tonumber(cash)
+		local formatted = math.floor(cash)
+		while true do
+			formatted, count = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+			if count == 0 then
+				break
+			end
+		end
+		return formatted
+	end
+
+	function reverseTable(table)
+		for index = 1, math.floor(#table / 2) do
+			local writeIndex = #table - index + 1
+			table[index], table[writeIndex] = table[writeIndex], table[index]
+		end
+	end
+
+	function dataRequire(module)
+		return require(module)("", "")
+	end
+
+	function encrypt(message)
+		local encrypted = ""
+		for i = 1, #message do
+			local char = message:sub(i, i)
+			local encryptedChar = string.char(char:byte() + 1)
+			encrypted = encrypted .. encryptedChar
+		end
+		return encrypted
+	end
+
+	function getClosestObject(Types)
+		local Results = {}
+		for i, v in next, game.workspace.Plots["Plot_" .. client.Name].House:GetChildren() do
+			for k, x in next, v:GetDescendants() do
+				for a, b in next, Types do
+					if x.Name:find(b) and x:IsA("Part") then
+						table.insert(Results, x)
+					end
+				end
+			end
+		end
+		if #Results == 1 then
+			return Results[1]
+		else
+			local closest
+			local last = math.huge
+			for i, v in next, Results do
+				local mag = (client.Character.HumanoidRootPart.Position - v.Position).magnitude
+				if mag < last then
+					last = mag
+					closest = v
+				end
+			end
+			return closest
+		end
+	end
+
+	function TweenToPos(target, speed)
+		if client.Character:FindFirstChild("HumanoidRootPart") then
+			local dist = (client.Character.HumanoidRootPart.Position - target.p).magnitude
+			curTween = game:GetService("TweenService"):Create(
+				client.Character.HumanoidRootPart,
+				TweenInfo.new(dist / speed, Enum.EasingStyle.Linear),
+				{
+					CFrame = target,
+				}
+			)
+			curTween:Play()
+			curTween.Completed:wait()
+			curTween = nil
+		end
+	end
+
+	function findCountFromTextLabels(imgLabel)
+		for _, child in ipairs(imgLabel:GetChildren()) do
+			if child.ClassName == "TextLabel" then
+				local text = child.Text
+				local count = text:match("^x(%d+)$")
+				if count then
+					return tonumber(count)
+				end
+			elseif child.ClassName == "ImageLabel" then
+				local nestedCount = findCountFromTextLabels(child)
+				if nestedCount then
+					return nestedCount
+				end
+			end
+		end
+		return 1
+	end
+
+	function findSizeFromTextLabels(imgLabel)
+		for _, child in ipairs(imgLabel:GetChildren()) do
+			if child.ClassName == "ImageLabel" then
+				for _, subchild in ipairs(child:GetChildren()) do
+					if subchild.ClassName == "TextLabel" and subchild.Text:match("^[LSM]$") then
+						return subchild.Text
+					end
+				end
+			end
+		end
+		return nil
+	end
+
+	function parseFrame(frame)
+		local parts = {}
+		local isBurger = false
+		local isDrinkOrSide = false
+		local size = nil
+		local image_to_object = { ["rbxassetid://14358866788"] = "patty_left" , ["rbxassetid://14358886220"] = "patty_right", ["rbxassetid://14358865402"] = "lettuce", ["rbxassetid://14358884748"] = "tomato", ["rbxassetid://14358880695"] = "cheese", ["rbxassetid://14467423053"] = "fries", ["rbxassetid://14467425084"] = "soda", ["rbxassetid://14467509651"] = "moz_sticks", ["rbxassetid://14358878251"] = "onion", ["rbxassetid://14467511580"] = "onion_rings", ["rbxassetid://9555980177"] = "fruit_juice", ["rbxassetid://1588110682"] = "milkshake" }
+
+		for _, child in ipairs(frame:GetChildren()) do
+			if child.ClassName == "ImageLabel" then
+				local id = child.Image
+				local partName = image_to_object[id]
+				if partName then
+					local count = findCountFromTextLabels(child) or 1
+					parts[partName] = (parts[partName] or 0) + count
+					if
+						partName == "patty_left"
+						or partName == "patty_right"
+						or partName == "lettuce"
+						or partName == "tomato"
+						or partName == "cheese"
+						or partName == "onion"
+					then
+						isBurger = true
+					elseif
+						partName == "fries"
+						or partName == "moz_sticks"
+						or partName == "onion_rings"
+						or partName == "soda"
+						or partName == "fruit_juice"
+						or partName == "milkshake"
+					then
+						isDrinkOrSide = true
+						size = findSizeFromTextLabels(child)
+					end
+				end
+			end
+		end
+
+		return {
+			parts = parts,
+			isBurger = isBurger,
+			isDrinkOrSide = isDrinkOrSide,
+			size = size,
+		}
+	end
+
+	function calculatePattyCount(parts)
+		local leftCount = parts["patty_left"] or 0
+		local rightCount = parts["patty_right"] or 0
+
+		if leftCount > 0 and rightCount > 0 then
+			return -(leftCount + rightCount)
+		elseif leftCount > 0 then
+			return 10 + leftCount
+		elseif rightCount > 0 then
+			return 20 + rightCount
+		else
+			return 0
+		end
+	end
+
+	function getSideCode(part, size)
+		local base = sideBaseCodes[part]
+		if not base then
+			return nil
+		end
+		local offset = sizeOffsets[size] or 0
+		return base + offset
+	end
+
+	function getDrinkCode(part, size)
+		local base = drinkBaseCodes[part]
+		if not base then
+			return nil
+		end
+		local offset = sizeOffsets[size] or 0
+		return base + offset
+	end
+
+	function buildOrderTable(decodedFrames)
+		local burgerOrder = { 0, 0, 0, 0, 0, 2 }
+		local sideOrder = nil
+		local drinkOrder = nil
+
+		local burgerIndices = {
+			cheese = 2,
+			lettuce = 3,
+			tomato = 4,
+			onion = 5,
+		}
+
+		for _, decoded in ipairs(decodedFrames) do
+			if decoded.isBurger then
+				local pattyCount = calculatePattyCount(decoded.parts)
+				if pattyCount == 0 then
+					pattyCount = 11
+				end
+				burgerOrder[1] = burgerOrder[1] + pattyCount
+				for part, count in pairs(decoded.parts) do
+					if part ~= "patty_left" and part ~= "patty_right" then
+						local idx = burgerIndices[part]
+						if idx then
+							burgerOrder[idx] = burgerOrder[idx] + count
+						end
+					end
+				end
+			elseif decoded.isDrinkOrSide then
+				for part, count in pairs(decoded.parts) do
+					if sideBaseCodes[part] then
+						sideOrder = getSideCode(part, decoded.size)
+					elseif drinkBaseCodes[part] then
+						drinkOrder = getDrinkCode(part, decoded.size)
+					end
+				end
+			end
+		end
+
+		local orderTable = {
+			[1] = {
+				Order = {
+					burgerOrder,
+				},
+			},
+		}
+
+		if sideOrder then
+			orderTable[1].Order[2] = sideOrder
+		end
+		if drinkOrder then
+			orderTable[1].Order[3] = drinkOrder
+		end
+
+		return orderTable
+	end
+
+	function getHarvestable()
+		local targetPlot = workspace.Plots["Plot_" .. client.Name]
+		local harvestable = {}
+
+		for i, v in pairs(targetPlot.House.Objects:GetChildren()) do
+			if v.Name == "Berry Bush" and not v.ObjectData:FindFirstChild("GrowProgress") then
+				table.insert(harvestable, v)
+			end
+		end
+
+		return harvestable
+	end
+
+	function isMemberOf(origin, member)
+		for _, descendant in next, origin:GetDescendants() do
+			if member == descendant then
+				return descendant
+			end
+		end
+	end
+
+	function waitUntilUnpaused()
+		while featureConfig.autoBuild.paused do
+			task.wait(0.1)
+		end
+	end
+
+		function checkLowMood()
+		local moodValues = {
+			modules.stats.MoodData.Fun.Value,
+			modules.stats.MoodData.Energy.Value,
+			modules.stats.MoodData.Hygiene.Value,
+			modules.stats.MoodData.Hunger.Value,
+		}
+
+		local lowCount = 0
+		for _, value in pairs(moodValues) do
+			if value < featureConfig.autoMood.CheckMoodValue then
+				lowCount += 1
+			end
+		end
+
+		return lowCount >= 2
+	end
+
+	function boostHunger()
+		local fridge = getClosestObject({ "Fridge" })
+
+		if not fridge then
+			return Library:Notification({
+				Title = "Synix",
+				Description = "You need a fridge!",
+				Duration = 25,
+				Color = Color3.fromRGB(93, 234, 5),
+			})
+		end
+
+		featureConfig.autoMood.currentMoodStatus = "Eating Food"
+
+		TweenToPos(fridge.CFrame, 16)
+
+		local hunger = modules.stats.MoodData.Hunger
+		local start = os.clock()
+		local reached = false
+
+		local conn = hunger.Changed:Connect(function(val)
+			if val >= 100 then
+				reached = true
+			end
+		end)
+
+		repeat
+			task.spawn(function()
+				fireServer({
+					Type = "Interact",
+					Target = fridge,
+					Path = "4",
+				})
+			end)
+			task.wait(0.2)
+			task.spawn(function()
+				fireServer({
+					Type = "TakeQuickFood",
+					Name = "Pear",
+				})
+			end)
+			task.wait(0.2)
+
+			repeat
+				if client.Character:FindFirstChild("Pear") then
+					fireServer({
+						Type = "EatEquipped",
+					})
+				end
+				task.wait(5)
+			until not client.Character:FindFirstChild("Pear") or hunger.Value >= 100 or os.clock() - start > 60
+
+			task.wait(0.5)
+		until reached or os.clock() - start > 60
+
+		conn:Disconnect()
+		local snack = game.Workspace[client.Name]:FindFirstChild("Pear")
+		if snack then
+			fireServer({
+				Type = "UnequipItem",
+				Item = snack,
+			})
+		end
+	end
+
+	function boostHygiene()
+		local tub = getClosestObject({ "Bathtub" }) or getClosestObject({ "Shower" })
+
+		if not tub then
+			return Library:Notification({
+				Title = "Synix",
+				Description = "You need a shower/tub!",
+				Duration = 25,
+				Color = Color3.fromRGB(93, 234, 5),
+			})
+		end
+
+		featureConfig.autoMood.currentMoodStatus = "Showering"
+
+		TweenToPos(tub.CFrame + Vector3.new(3, 2, 0), 16)
+		fireServer({
+			Type = "Interact",
+			Target = tub,
+			Path = "1",
+		})
+
+		local hygiene = modules.stats.MoodData.Hygiene
+		local start = os.clock()
+		local reached = false
+
+		local conn = hygiene.Changed:Connect(function(val)
+			if val >= 100 then
+				reached = true
+			end
+		end)
+
+		repeat
+			task.wait(0.5)
+			if hygiene.Value >= 100 then
+				reached = true
+			end
+		until reached or os.clock() - start > 60
+
+		conn:Disconnect()
+
+		fireServer({
+			Type = "Detach",
+		})
+	end
+
+	function boostEnergy()
+		local bed = getClosestObject({ "Bed" })
+
+		if not bed then
+			return Library:Notification({
+				Title = "Synix",
+				Description = "You need a bed!",
+				Duration = 25,
+				Color = Color3.fromRGB(93, 234, 5),
+			})
+		end
+
+		featureConfig.autoMood.currentMoodStatus = "Sleeping"
+
+		TweenToPos(bed.CFrame + Vector3.new(3, 2, 0), 16)
+
+		fireServer({
+			Type = "Interact",
+			Target = bed,
+			Path = "1",
+		})
+
+		local energy = modules.stats.MoodData.Energy
+		local start = os.clock()
+		local reached = false
+
+		local conn = energy.Changed:Connect(function(val)
+			if val >= 100 then
+				reached = true
+			end
+		end)
+
+		repeat
+			task.wait(0.5)
+			if energy.Value >= 100 then
+				reached = true
+			end
+		until reached or os.clock() - start > 60
+
+		conn:Disconnect()
+
+		fireServer({
+			Type = "Detach",
+		})
+	end
+
+	function boostFun()
+		local tv = getClosestObject({ "TV" })
+			or getClosestObject({ "Pixelview" })
+			or getClosestObject({ "Television" })
+
+		if not tv then
+			return Library:Notification({
+				Title = "Synix",
+				Description = "You need a TV!",
+				Duration = 25,
+				Color = Color3.fromRGB(93, 234, 5),
+			})
+		end
+
+		featureConfig.autoMood.currentMoodStatus = "Watching TV"
+
+		TweenToPos(tv.CFrame + Vector3.new(3, 2, 0), 16)
+
+		for _ = 1, 3 do
+			fireServer({
+				Type = "Interact",
+				Target = tv,
+				Path = "1",
+			})
+		end
+
+		fireServer({
+			Type = "Interact",
+			Target = tv,
+			Path = "2",
+		})
+
+		local fun = modules.stats.MoodData.Fun
+		local start = os.clock()
+		local reached = false
+
+		local conn = fun.Changed:Connect(function(val)
+			if val >= 100 then
+				reached = true
+			end
+		end)
+
+		repeat
+			task.wait(0.5)
+			if fun.Value >= 100 then
+				reached = true
+			end
+		until reached or os.clock() - start > 60
+
+		conn:Disconnect()
+
+		fireServer({
+			Type = "Interact",
+			Target = tv,
+			Path = "1",
+		})
+	end
+
+	function boost()
+		featureConfig.autoMood.isBoosting = true
+
+		invokeServer({
+			Type = "ToPlot",
+			Player = client.Name,
+		})
+
+		task.wait(0.5)
+		fireServer({ Type = "EndShift" })
+
+		boostHygiene()
+		boostEnergy()
+		boostFun()
+		boostHunger()
+		if not featureConfig.autofarmSettings.isOnBreak then
+			require(clientScripts.JobHandler):GoToWork(featureConfig.autoBuild.SelectedJob)
+
+			invokeServer({
+	           Type = "StartShift",
+	           Job = featureConfig.autoBuild.SelectedJob
+            })
+		end
+		task.wait(1)
+		featureConfig.autoMood.isBoosting = false
+		featureConfig.autoMood.currentMoodStatus = "Waiting"
+	end
+
+	function shouldTakeBreak()
+		if not featureConfig.autofarmSettings.breaksEnabled then
+			featureConfig.autofarmSettings.timeTill = "Disabled"
+			return false
+		end
+
+		if not featureConfig.autoBuild.SelectedJob then
+			featureConfig.autofarmSettings.timeTill = "Disabled"
+			return false
+		end
+
+		if featureConfig.autoMood.isBoosting then
+			featureConfig.autofarmSettings.timeTill = "Disabled"
+			return false
+		end
+
+		local now = os.clock()
+		local timeSinceLastBreak = now - featureConfig.autofarmSettings.lastBreakTick
+
+		if featureConfig.autofarmSettings.isOnBreak then
+			local remainingBreak = (featureConfig.autofarmSettings.breaktime * 60) - timeSinceLastBreak
+			featureConfig.autofarmSettings.timeTill = math.max(0, math.floor(remainingBreak))
+		else
+			local remainingWork = (featureConfig.autofarmSettings.worktime * 60) - timeSinceLastBreak
+			featureConfig.autofarmSettings.timeTill = math.max(0, math.floor(remainingWork))
+		end
+
+		if featureConfig.autofarmSettings.isOnBreak then
+			if timeSinceLastBreak >= (featureConfig.autofarmSettings.breaktime * 60) then
+				task.wait()
+				featureConfig.autofarmSettings.isOnBreak = false
+				featureConfig.autofarmSettings.lastBreakTick = os.clock()
+
+				require(clientScripts.JobHandler):GoToWork(featureConfig.autoBuild.SelectedJob)
+				featureConfig.autoMood.currentMoodStatus = "Working"
+				return false
+			else
+				return true
+			end
+		else
+			if timeSinceLastBreak >= (featureConfig.autofarmSettings.worktime * 60) then
+				task.wait()
+				featureConfig.autofarmSettings.isOnBreak = true
+				featureConfig.autofarmSettings.lastBreakTick = os.clock()
+
+				fireServer({ Type = "EndShift" })
+				task.wait(0.25)
+				invokeServer({
+					Type = "ToPlot",
+					Player = client.Name,
+				})
+
+				if featureConfig.autoHarvest.enabled then
+					local harvestable = getHarvestable()
+
+					if #harvestable > 0 then
+						for i, harvest in pairs(harvestable) do
+							TweenToPos(harvest.Position, 16)
+
+							fireServer({
+								Type = "Interact",
+								Target = harvest,
+								Path = "6",
+							})
+
+							task.wait(2)
+						end
+					end
+				end
+
+				featureConfig.autoMood.currentMoodStatus = "On Break"
+				boost()
+				return true
+			end
+		end
+
+		return false
+	end
+
+	function getClosestCustomer()
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+
+		local closest = nil
+		local shortestDist = math.huge
+
+		for _, customer in ipairs(CollectionService:GetTagged("PizzaPlanetDeliveryCustomer")) do
+			if customer:IsA("Model") and customer.PrimaryPart then
+				local dist = (customer.PrimaryPart.Position - rootPart.Position).Magnitude
+				if dist < shortestDist then
+					shortestDist = dist
+					closest = customer
+				end
+			end
+		end
+
+		if closest then
+			return closest
+		end
+	end
+
+	function getClosetSpawn(spawnTable)
+		local closestSpawn = nil
+		local shortestDistance = math.huge
+
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if not hrp then
+			return nil
+		end
+
+		for _, spawn in ipairs(spawnTable) do
+			local pos
+			if spawn:IsA("Model") and spawn:FindFirstChild("PrimaryPart") then
+				pos = spawn.PrimaryPart.Position
+			elseif spawn:IsA("BasePart") then
+				pos = spawn.Position
+			elseif spawn:IsA("Model") then
+				pos = spawn:GetModelCFrame().Position
+			end
+
+			if pos then
+				local dist = (hrp.Position - pos).Magnitude
+				if dist < shortestDistance then
+					shortestDistance = dist
+					closestSpawn = spawn
+				end
+			end
+		end
+
+		return closestSpawn
+	end
+
+	function playerTracker()
+		for _, player in next, game.Players:GetPlayers() do
+			local plot = workspace.Plots:FindFirstChild("Plot_" .. player.Name)
+
+			if plot then
+				table.insert(PlayersList, player.Name)
+				selectPlayer:Refresh(PlayersList)
+			end
+		end
+
+		Players.PlayerAdded:Connect(function(player)
+			local plot = workspace.Plots:FindFirstChild("Plot_" .. player.Name)
+
+			if plot then
+				table.insert(PlayersList, player.Name)
+				selectPlayer:Refresh(PlayersList)
+			end
+		end) 
+
+		Players.PlayerRemoving:Connect(function(player)
+			local index = table.find(PlayersList, player.Name)
+
+			if index then
+				table.remove(PlayersList, index)
+				selectPlayer:Refresh(PlayersList)
+			end
+		end)
+	end
+
+	function antiAfk()
+		while task.wait(60) do
+			VirtualUser:CaptureController()
+			VirtualUser:ClickButton2(Vector2.new(0, 0))
+		end
+	end
+
+	function toggleAllDoors(status)
+		for i, v in next, workspace.Plots:GetDescendants() do
+			if v.Name == "IsOpen" then
+				v.Value = status
+			end
+		end
+	end
+
+	function findCrate()
+	  local cratePos = Vector3.new(541.024, 21.26, -792.213)
+	  local cratesFolder = workspace.Environment.Locations.City.Supermarket.Geometry.Crates
+
+	   for _, crate in ipairs(cratesFolder:GetChildren()) do
+		  if crate:IsA("BasePart") and (crate.Position - cratePos).Magnitude < 0.01 then
+			return crate
+		   end
+	    end
+
+	  return nil
+    end
+
+    function getShelve()
+	   local shelves = game:GetService("Workspace").Environment.Locations.City.Supermarket.Interior.Shelves
+
+	   for _, shelf in pairs(shelves:GetChildren()) do
+	     	if shelf:FindFirstChild("IsEmpty") and shelf.IsEmpty.Value == true then
+		 	  return shelf
+		    end
+	    end
+
+	  return nil
+   end
+
+	function isInstanceNearPosition(instance, targetPos, tolerance)
+		tolerance = tolerance or 0.1
+
+		if not instance then
+			return false
+		end
+
+		local pos
+		if instance:IsA("BasePart") then
+			pos = instance.Position
+		elseif instance:IsA("Model") and instance.PrimaryPart then
+			pos = instance.PrimaryPart.Position
+		else
+			return false
+		end
+
+		return (pos - targetPos).Magnitude <= tolerance
+	end
+
+	function getCurrentStation(path)
+		local stations = path
+		local closestStation = nil
+		local shortestDistance = math.huge
+
+		for _, station in pairs(stations:GetChildren()) do
+			if station:IsA("Model") and station.PrimaryPart then
+				local distance = (station.PrimaryPart.Position - client.Character.PrimaryPart.Position).Magnitude
+				local inUse = station:FindFirstChild("InUse")
+
+				if
+					distance < shortestDistance
+					and (not inUse or inUse.Value == nil or inUse.Value == false or inUse.Value == client)
+				then
+					shortestDistance = distance
+					closestStation = station
+				end
+			end
+		end
+
+		return closestStation
+	end
+
+    function moodBreakCheck()
+        if shouldTakeBreak() then
+			featureConfig.autoMood.currentMoodStatus = "On Break"
+		end
+
+		if featureConfig.autoMood.MoodBoostEnabled and checkLowMood() then
+			featureConfig.autoMood.currentMoodStatus = "Starting"
+			boost()
+		end
+    end
+
+	function fireConnections(instance, signal)
+		firesignal(instance[signal])
+	end
+
+	function imul32(a, b)
+		a = bit32.band(a, 0xFFFFFFFF)
+		b = bit32.band(b, 0xFFFFFFFF)
+		local a_lo, a_hi = bit32.band(a, 0xFFFF), bit32.rshift(a, 16)
+		local b_lo, b_hi = bit32.band(b, 0xFFFF), bit32.rshift(b, 16)
+		local lo = a_lo * b_lo
+		local mid = a_hi * b_lo + a_lo * b_hi + bit32.rshift(lo, 16)
+		return bit32.bor(bit32.lshift(bit32.band(mid, 0xFFFF), 16), bit32.band(lo, 0xFFFF))
+	end
+
+	function lcg32(seed)
+		local prod = imul32(1103515245, seed)
+		local sum = bit32.band(prod + 12345, 0xFFFFFFFF)
+		return sum
+	end
+
+	function currentSlot()
+		return math.floor(os.time() / SLOT_SECONDS)
+	end
+
+	math.randomseed(tick() % 1 * 1e9)
+	function rand32()
+		local a = math.random(0, 0x7FFF)
+		local b = math.random(0, 0x7FFF)
+		local c = math.random(0, 0x3)
+		return bit32.bor(bit32.lshift(a, 17), bit32.lshift(b, 2), c)
+	end
+
+	function buildAuth()
+		local slot = currentSlot()
+		local n_hi, n_lo = rand32(), rand32()
+		local mix = bit32.band(bit32.bxor(n_hi, n_lo), 0xFFFFFFFF)
+		local seed = bit32.band(bit32.bxor(slot, mix), 0xFFFFFFFF)
+		local mac = lcg32(seed)
+		return string.format("0x%08x%08x%08x%08x", slot, n_hi, n_lo, mac)
+	end
+
+	function clickButton(text, inUse)
+
+        local InteractIndicator =
+            game.Players.LocalPlayer.PlayerGui._interactUI.InteractIndicator
+
+      --  repeat
+       --     task.wait()
+		--	print('waiting')
+      --  until InteractIndicator.Visible
+      --      and (InteractIndicator.TextLabel.Text == text)
+
+	  if InteractIndicator.TextLabel.Text == text and InteractIndicator.Visible then
+        firesignal(
+            game.Players.LocalPlayer.PlayerGui._interactUI.InteractIndicator.Activated
+        )
+	end
+
+		return
+    end
+
+	function applyStockerMods()
+		local function safeFindFirstChildWhichIsA(instance, className)
+			for _, child in ipairs(instance:GetChildren()) do
+				if child:IsA(className) then
+					return child
+				end
+			end
+			return nil
+		end
+
+		local function addModifier(part, label)
+			local existing = safeFindFirstChildWhichIsA(part, "PathfindingModifier")
+			if existing then
+				pcall(function()
+					existing:Destroy()
+				end)
+			end
+
+			local mod = Instance.new("PathfindingModifier")
+			mod.Name = "Synix_Mod"
+			mod.PassThrough = false
+			mod.Label = label
+			mod.Parent = part
+		end
+
+		local function safeDescendants(container, callback)
+			if container and container:IsA("Instance") then
+				for _, part in ipairs(container:GetDescendants()) do
+					if part:IsA("BasePart") then
+						callback(part)
+					end
+				end
+			end
+		end
+
+		local function safeChildren(container, callback)
+			if container and container:IsA("Instance") then
+				for _, part in ipairs(container:GetChildren()) do
+					if part:IsA("BasePart") then
+						callback(part)
+					end
+				end
+			end
+		end
+
+		local floor = game["Workspace"]["Environment"]["Locations"]["City"]["Supermarket"]["Exterior"]["Floor"]
+		addModifier(floor, "Floor")
+
+		for i, v in
+			pairs(
+				game["Workspace"]["Environment"]["Locations"]["City"]["Supermarket"]["Interior"]["Shelves"]:GetChildren()
+			)
+		do
+			if isInstanceNearPosition(v.PrimaryPart, Vector3.new(532.849, 20.86, -764.019)) then
+				safeDescendants(v, function(part)
+					addModifier(part, "shelves")
+				end)
+			end
+		end
+	end
+end
+
+--// Globals
+do 
+	getgenv().sideBaseCodes = { fries = 11, moz_sticks = 21, onion_rings = 31 }
+	getgenv().drinkBaseCodes = { soda = 11, fruit_juice = 21, milkshake = 31 }
+	getgenv().sizeOffsets = { S = 0, M = 1, L = 2 }
+	getgenv().data = { foodList = dataRequire(ReplicatedStorage.Items.Food), appliances = dataRequire(ReplicatedStorage.Items.Appliances), customers = workspace["_game"].SpawnedCharacters, skills = {}, items = ReplicatedStorage.Items, vehicleData = require(ReplicatedStorage.Modules.VehicleService.VehicleData), oldStaminaFunction = modules.staminaService.GetMaxStaminaValue }
+	getgenv().featureConfig = {autoBuild={saveTarget=nil,loadId=nil,infoId=nil,startAfter=0,webhookAutoBuild=false,saveDelay=false,maxMoneyForObject=100000,useVehicles=true,useBlockbux=false,abortBuild=false,playerTargetTextbox=nil,useInventoryItems=true,paused},autoMood={CheckMoodValue=20,currentMoodStatus="Waiting",MoodBoostEnabled=false,isBoosting=false},jobList={"StylezHairdresser","PizzaPlanetBaker","PizzaPlanetDelivery","BloxBurgersEmployee","CleanJanitor","SupermarketStocker","SupermarketCashier"},autofarmSettings={enablequit=false,quitatamt=nil,worktime=30,breaktime=30,breaksEnabled=false,SelectedJob=nil,isOnBreak=false,lastBreakTick=nil,modsApplied=false,superMarketMods=false,currentStatus="Starting",currentlyEnabled=false,timeTill=nil,workTick=nil,hasTakenIntialBag=false,itemScannedCount=0},webhookSettings={webhook=nil,webhookdelay=5,enabled=false},webSocket={connected="Disconnected"},autoHarvest={itemToHarvest="Berry Bush",enabled=false}}
+	getgenv().farmStats = { values = { totalEarnings = 0, lastShift = 0 } }
+	getgenv().PlayersList = {}
+end
+
+--// Start
+task.spawn(antiAfk)
+
+modules.PizzaPlanetDelivery.ShiftLoop = function() return task.wait(9e9) end
+
+--// Interface
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/fpszrxy/chasehubb-premuium/refs/heads/main/ui/azurix"))() do
+	local newTab = setmetatable({}, { __call = function(self, title) return Library:Tab({ Title = title, Icon = "rbxassetid://14090692760" }) end })
+
+	Library:Window({ Name = "Synix", Rank = "Premium Bloxburg" })
+
+	local autoBuildT = newTab("Auto Build") do
+		local savehouseS = autoBuildT:Section({ Name = "Save House" }) do
+			getgenv().selectPlayer = savehouseS:Dropdown({
+				Name = "Select Player",
+				Options = PlayersList,
+				Default = "Option 1",
+
+				Callback = function(selected)
+					featureConfig.autoBuild.saveTarget = selected
+				end,
+			})
+
+			task.spawn(playerTracker)
+
+			savehouseS:Textbox({
+				Name = "Player Name",
+				Default = "Name...",
+				Callback = function(text)
+					local input = text and text:match("^%s*(.-)%s*$")
+					if not input or input == "" or input == "Name..." then
+						Library:Notification({
+							Title = "Error",
+							Description = "Please enter a valid name",
+							Duration = 5,
+							Color = Color3.fromRGB(255, 85, 85),
+						})
+
+						return
+					end
+
+					local loweredInput = string.lower(input)
+					local matchedPlayer = nil
+
+					for _, player in ipairs(Players:GetPlayers()) do
+						local username = string.lower(player.Name)
+						local displayName = string.lower(player.DisplayName)
+
+						if
+							username:sub(1, #loweredInput) == loweredInput
+							or displayName:sub(1, #loweredInput) == loweredInput
+						then
+							matchedPlayer = player
+							break
+						end
+					end
+
+					if matchedPlayer and matchedPlayer.Name then
+						featureConfig.autoBuild.saveTarget = matchedPlayer.Name
+						Library:Notification({
+							Title = "Success",
+							Description = "Found " .. matchedPlayer.Name,
+							Duration = 5,
+							Color = Color3.fromRGB(93, 234, 5),
+						})
+					else
+						Library:Notification({
+							Title = "Error",
+							Description = "User Not Found",
+							Duration = 5,
+							Color = Color3.fromRGB(255, 85, 85),
+						})
+					end
+				end,
+			})
+
+			savehouseS:Button({
+				Name = "Go To Plot",
+				Callback = function()
+					invokeServer({ Type = "ToPlot", Player = featureConfig.autoBuild.saveTarget })
+				end,
+			})
+
+			savehouseS:Button({
+				Name = "Save Build",
+				Callback = function()
+					local targetPlot = workspace.Plots["Plot_" .. featureConfig.autoBuild.saveTarget]
+
+					-- save data
+					local saveData = {
+						Walls = {},
+						Floors = {},
+						Roofs = {},
+						Fences = {},
+						Counters = {},
+						Objects = {},
+						Basements = {},
+						Pools = {},
+						Paths = {},
+						FrontObjects = {
+							Mailbox = {
+								CFrame = nil,
+								Name = nil,
+								Color = nil,
+							},
+							Trash = {
+								CFrame = nil,
+								Name = nil,
+								Color = nil,
+							},
+							Position = nil,
+						},
+						Information = {
+							TotalCost = 0,
+							TotalItems = 0,
+							TotalBlockbux = 0,
+							Gamepasses = {},
+							Skills = {},
+						},
+					}
+					local floorsSort = {
+						id = 1,
+						floors = {},
+					}
+
+					-- functions
+					local encode = {
+						position = function(position)
+							return { position.X, position.Y, position.Z }
+						end,
+						cframe = function(cframe)
+							return { cframe:components() }
+						end,
+					}
+					local decode = {
+						cframe = function(cframe)
+							return CFrame.new(unpack(cframe))
+						end,
+						position = function(position)
+							return Vector3.new(unpack(position))
+						end,
+					}
+
+					local function findFloor(position)
+						local raycastParams = RaycastParams.new()
+						raycastParams.FilterType = Enum.RaycastFilterType.Whitelist
+						raycastParams.FilterDescendantsInstances = { targetPlot }
+						raycastParams.IgnoreWater = true
+						local floorPart = workspace:Raycast(position, Vector3.new(0, -100, 0), raycastParams)
+						local instance
+						if floorPart then
+							if floorPart.Instance then
+								instance = floorPart.Instance
+								if (instance.Parent ~= targetPlot.GroundParts) and (instance.Parent ~= targetPlot) then
+									if instance.Parent then
+										while instance.Parent.Parent ~= targetPlot.House do
+											instance = instance.Parent
+										end
+									else
+										return targetPlot.PrimaryPart
+									end
+								end
+							else
+								return targetPlot.PrimaryPart
+							end
+						else
+							return targetPlot.PrimaryPart
+						end
+						return instance
+					end
+					local function getFloorId(floor)
+						local currentId = floorsSort.id
+						floorsSort.id = floorsSort.id + 1
+
+						table.insert(floorsSort.floors, {
+							floor = floor,
+							id = floorsSort.id,
+						})
+						return currentId
+					end
+
+					local function savePosition(position)
+						local position = modules.objectService:RoundToSaveResolution(CFrame.new(position)).Position
+						return encode.position(targetPlot.Water.CFrame:PointToObjectSpace(position))
+					end
+					local function saveCFrame(cframe)
+						local cframe = modules.objectService:RoundToSaveResolution(cframe)
+						return encode.cframe(targetPlot.Water.CFrame:ToObjectSpace(cframe))
+					end
+
+					local function saveColor(object)
+						local name = {}
+						local number = modules.colorService:GetAppearanceData(object)
+
+						for index, inner in next, number do
+							if #inner == 0 then
+								name[index] = {}
+							else
+								local insert = {}
+
+								local colorId = tonumber(inner[1])
+								if colorId then
+									insert[1] = colorId
+									saveData.Information.TotalCost += 5
+
+									if object.Name ~= "Poster" and colorId < 0 then
+										if not table.find(saveData.Information.Gamepasses, "Custom Colors") then
+											table.insert(saveData.Information.Gamepasses, "Custom Colors")
+										end
+									end
+								else
+									insert[1] = "0"
+								end
+
+								local materialId = tonumber(inner[2])
+								if materialId and materialId ~= 0 then
+									insert[2] = modules.materialData:GetMaterialFromID(materialId).Name
+									saveData.Information.TotalCost += 20
+								else
+									insert[2] = 0
+								end
+
+								name[index] = insert
+							end
+						end
+
+						return name
+					end
+
+					local function canBeResized(itemName)
+						return modules.resizeService.CanResize("", client, modules.itemService:GetItem(itemName))
+					end
+					local function getResizeData(item)
+						local resizeData = item:GetAttribute("_resizeRootSize1")
+						if not resizeData then
+							return
+						end
+						return encode.position(resizeData)
+					end
+
+					local function roundVector3(vector3)
+						local tempResult =
+							{ floorNumber(vector3.X, 1), floorNumber(vector3.Y, 1), floorNumber(vector3.Z, 1) }
+						return tempResult
+					end
+					local function updateCost(itemName)
+						saveData.Information.TotalItems = saveData.Information.TotalItems + 1
+
+						local item = modules.itemService:GetItem(itemName)
+
+						if item then
+							if item.Price and item.Price > 0 then
+								saveData.Information.TotalCost = saveData.Information.TotalCost + item.Price
+							elseif item.BSPrice and item.BSPrice > 0 then
+								saveData.Information.TotalBlockbux = saveData.Information.TotalBlockbux + item.BSPrice
+							end
+						else
+							saveData.Information.TotalCost = saveData.Information.TotalCost
+								+ modules.plotService:GetObjectValue(itemName)
+						end
+					end
+
+					local function saveInnerObjects(holder, skipSideValue)
+						if not holder then
+							return
+						end
+						if not holder:FindFirstChild("ItemHolder") or holder.ItemHolder:GetChildren() == 0 then
+							return
+						end
+
+						local Objects = {}
+						for _, object in pairs(holder.ItemHolder:GetChildren()) do
+							if not object:IsA("BasePart") then
+								continue
+							end
+							updateCost(object)
+
+							local objectArray = {}
+							local sideValue
+							do
+								if object:FindFirstChild("SideValue") then
+									sideValue = object.SideValue.Value
+								else
+									sideValue = nil
+								end
+								if skipSideValue == true then
+									sideValue = nil
+								end
+							end
+							if object:GetAttribute("_transformStart") then
+
+								if not table.find(saveData.Information.Gamepasses, "Transform Plus") then
+									table.insert(saveData.Information.Gamepasses, "Transform Plus")
+								end
+
+							    local offset 
+								if object.Parent.Parent.Name == "Wall" then
+								 offset = object.Parent.Parent.SizeBox.CFrame:ToObjectSpace(object.CFrame)
+								else
+								 offset = targetPlot.Ground.CFrame:ToObjectSpace(object.CFrame)
+								end
+
+								objectArray.CFrame = saveCFrame(object.CFrame)
+								objectArray.TransformData = encode.cframe(offset)
+							else
+								objectArray.CFrame = saveCFrame(object.CFrame)
+							end
+
+							if object and object:FindFirstChild("ObjectModel") and object.ObjectModel:FindFirstChild("StartPart") and object.ObjectModel:FindFirstChild("EndPart") then
+                              objectArray.StartPart = savePosition(object.ObjectModel.StartPart.Position)
+							  objectArray.EndPart = savePosition(object.ObjectModel.EndPart.Position)
+						   end
+
+							objectArray.Name = object.Name
+							objectArray.Side = sideValue
+							objectArray.Color = saveColor(object)
+
+							if object:FindFirstChild("ObjectData") and object.ObjectData:FindFirstChild("Height") then
+								objectArray.Height = object.ObjectData:FindFirstChild("Height").Value
+							end
+
+							do
+								if object:FindFirstChild("ObjectData") then
+									if object.ObjectData:FindFirstChild("Image") then
+										objectArray.Image = object.ObjectData:FindFirstChild("Image").Value
+									end
+								end
+							end
+							do
+								if object:GetAttribute("_resizeRootSize1") ~= nil then
+									objectArray.ResizeData = encode.position(object:GetAttribute("_resizeRootSize1"))
+								end
+							end
+
+							objectArray.Objects = saveInnerObjects(object, true)
+
+							table.insert(Objects, objectArray)
+						end
+
+						return Objects
+					end
+
+					-- save objects
+					do
+						for _, wall in next, targetPlot.House.Walls:GetChildren() do
+							if wall.Name == "Poles" then
+								continue
+							end
+							updateCost(wall)
+
+							local insertValue = {}
+
+							local wallTo, wallFrom = modules.wallService:GetWallEdges(wall)
+
+							insertValue.Position = {
+								From = savePosition(wallFrom),
+								To = savePosition(wallTo),
+							}
+
+							insertValue.Color = {
+								Right = saveColor(wall.RPart)[1],
+								Left = saveColor(wall.RPart)[2],
+							}
+
+							insertValue.Objects = saveInnerObjects(wall)
+							if not saveData.Objects then
+								saveData.Objects = {}
+							end
+							table.insert(saveData.Walls, insertValue)
+						end
+						for _, floor in next, targetPlot.House.Floor:GetChildren() do
+							updateCost(floor)
+
+							local insertValue = {}
+
+							insertValue.Id = getFloorId(floor)
+							insertValue.Color = saveColor(floor)
+							insertValue.Points = {}
+							do
+								for _, point in next, floor.PointData:GetChildren() do
+									table.insert(
+										insertValue.Points,
+										savePosition(
+											targetPlot.Ground.CFrame:PointToWorldSpace(point.Value)
+												+ Vector3.new(0, 0.05, 0)
+										)
+									)
+								end
+							end
+
+							table.insert(saveData.Floors, insertValue)
+						end
+						for _, roof in next, targetPlot.House.Roof:GetChildren() do
+							updateCost(roof)
+
+							local inputValue = {}
+							inputValue.Points = {}
+							inputValue.Settings = {
+								Type = roof.Name,
+								IsPreview = true,
+							}
+							inputValue.Color = saveColor(roof)
+
+							for _, point in next, roof.PointData:GetChildren() do
+								table.insert(
+									inputValue.Points,
+									savePosition(
+										targetPlot.Ground.CFrame:PointToWorldSpace(point.Value)
+											+ Vector3.new(0, 0.05, 0)
+									)
+								)
+							end
+							for _, setting in next, roof.PropertyData:GetChildren() do
+								inputValue.Settings[setting.Name] = setting.Value
+							end
+
+							inputValue.Objects = saveInnerObjects(roof)
+							table.insert(saveData.Roofs, inputValue)
+						end
+
+						for _, fence in next, targetPlot.House.Fences:GetChildren() do
+							if fence.Name == "Poles" then
+								continue
+							end
+							updateCost(fence)
+
+							local from, to = modules.fenceService:GetEdgePositions(fence)
+
+							local inputValue = {}
+							inputValue.From = savePosition(from)
+							inputValue.To = savePosition(to)
+							inputValue.Name = fence.Name
+							inputValue.Color = saveColor(fence)
+
+							inputValue.Objects = saveInnerObjects(fence)
+
+							table.insert(saveData.Fences, inputValue)
+						end
+						for _, counter in next, targetPlot.House.Counters:GetChildren() do
+							local success = pcall(function()
+								updateCost(counter)
+
+								local inputValue = {
+									Name = counter.Name,
+									CFrame = saveCFrame(counter.CFrame),
+									Color = saveColor(counter),
+								}
+
+								do
+									local floorUsed = findFloor(counter.Position)
+									for _, array in next, floorsSort.floors do
+										if array.floor == floorUsed then
+											inputValue.Id = array.id
+											break
+										end
+									end
+									inputValue.Id = inputValue.Id or 0
+								end
+
+								local okInner, inner = pcall(function()
+									return saveInnerObjects(counter)
+								end)
+
+								if okInner and inner then
+									for _, obj in ipairs(inner) do
+										local ok = pcall(function()
+											HttpService:JSONEncode(obj)
+										end)
+										if ok then
+											table.insert(saveData.Objects, obj)
+										end
+									end
+								end
+
+								table.insert(saveData.Counters, inputValue)
+							end)
+						end
+
+						for _, basement in next, targetPlot.House.Basements:GetChildren() do
+							updateCost(basement)
+
+							local basementData = {}
+							basementDataName = basement.Name
+							basementData.Center = saveCFrame(basement.PrimaryPart.CFrame)
+							basementData.Size = { basement.PrimaryPart.Size.X, basement.PrimaryPart.Size.Z }
+
+							table.insert(saveData.Basements, basementData)
+						end
+						for _, pool in next, targetPlot.House.Pools:GetChildren() do
+							updateCost(pool)
+
+							local poolData = {}
+							poolData.Name = pool.Name
+							poolData.Center = saveCFrame(pool.PrimaryPart.CFrame)
+							poolData.Size = { pool.PrimaryPart.Size.X, pool.PrimaryPart.Size.Z }
+							poolData.Color = saveColor(pool)
+
+							table.insert(saveData.Pools, poolData)
+						end
+						for _, path in next, targetPlot.House.Paths:GetChildren() do
+							if path.Name == "Poles" then
+								continue
+							end
+
+							updateCost(path)
+
+							local pathData = {}
+							pathData.Name = path.Name
+							pathData.Color = saveColor(path)
+							pathData.To = savePosition(path.BPole.Value.Parent.Position)
+							pathData.From = savePosition(path.FPole.Value.Parent.Position)
+
+							pathData.Objects = saveInnerObjects(path)
+							table.insert(saveData.Paths, pathData)
+						end
+						for _, object in next, targetPlot.House.Objects:GetChildren() do
+							updateCost(object)
+
+							local inputValue = {}
+							inputValue["Name"] = object.Name
+							inputValue["Color"] = saveColor(object)
+
+							if object:GetAttribute("_transformStart") then
+								if not table.find(saveData.Information.Gamepasses, "Transform Plus") then
+									table.insert(saveData.Information.Gamepasses, "Transform Plus")
+								end
+
+								local offset = targetPlot.Ground.CFrame:ToObjectSpace(object.CFrame)
+
+								inputValue["CFrame"] = saveCFrame(object.CFrame)
+								inputValue["TransformData"] = encode.cframe(offset)
+							else
+								inputValue["CFrame"] = saveCFrame(object.CFrame)
+							end
+
+							if object:FindFirstChild("ObjectData") and object.ObjectData:FindFirstChild("Height") then
+								inputValue["Height"] = object.ObjectData:FindFirstChild("Height").Value
+							end
+
+							if object:FindFirstChild("ObjectData") and object.ObjectData:FindFirstChild("Image") then
+								inputValue["Image"] = object.ObjectData:FindFirstChild("Image").Value
+							end
+							do
+								local floorUsed = findFloor(object.Position)
+								for _, array in next, floorsSort.floors do
+									if array.floor == floorUsed then
+										inputValue.Id = array.id
+										break
+									end
+								end
+
+								inputValue.Id = inputValue.Id or 0
+							end
+							do
+								if canBeResized(object.Name) then
+									inputValue.ResizeData = getResizeData(object)
+								end
+							end
+							if not saveData.Objects then
+								saveData.Objects = {}
+							end
+							inputValue.Objects = saveInnerObjects(object)
+							table.insert(saveData.Objects, inputValue)
+						end
+					end
+
+					local function deepClone(tab)
+						local endTable = {}
+
+						for index, value in pairs(tab) do
+							if type(value) == "table" then
+								endTable[index] = deepClone(value)
+							else
+								endTable[index] = value
+							end
+						end
+
+						return endTable
+					end
+
+					local deepsaveData = deepClone(saveData)
+
+					do
+						local function GetPos(tab)
+							if type(tab) ~= "table" then
+								return false
+							end
+
+							if tab["To"] and tab["From"] and #tab["To"] == 3 and #tab["From"] == 3 then
+								return decode.position(tab["To"])
+							end
+
+							if tab["Position"] and type(tab["Position"]) == "table" and #tab["Position"] == 3 then
+								return decode.position(tab["Position"])
+							end
+
+							if tab["CFrame"] and type(tab["CFrame"]) == "table" then
+								if #tab["CFrame"] == 3 then
+									return decode.position(tab["CFrame"])
+								elseif #tab["CFrame"] > 3 then
+									return decode.cframe(tab["CFrame"])
+								end
+							end
+
+							return false
+						end
+
+						for _, value in pairs(deepsaveData) do
+							if type(value) == "table" then
+								for _, innerValue in pairs(value) do
+									if type(innerValue) == "table" then
+										for _, innerInnerValue in pairs(innerValue) do
+											if type(innerInnerValue) == "table" then
+												local position = GetPos(innerInnerValue)
+												if not position then
+												else
+													if
+														table.find(saveData.Information.Gamepasses, "Large Plot")
+														and table.find(
+															saveData.Information.Gamepasses,
+															"Multiple Floors"
+														)
+													then
+														break
+													end
+
+													if
+														(position.X <= -75 or position.X >= 75 or position.Z >= 25)
+														and not table.find(
+															saveData.Information.Gamepasses,
+															"Large Plot"
+														)
+													then
+														table.insert(saveData.Information.Gamepasses, "Large Plot")
+													end
+													if
+														position.Y >= 15.85
+														and not table.find(
+															saveData.Information.Gamepasses,
+															"Multiple Floors"
+														)
+													then
+														table.insert(saveData.Information.Gamepasses, "Multiple Floors")
+													end
+												end
+											end
+										end
+									end
+								end
+							end
+						end
+					end
+
+					if #saveData.Basements > 0 then
+						table.insert(saveData.Information.Gamepasses, "Basements")
+					end
+					for _, object in pairs(saveData.Objects) do
+						if object.ResizeData then
+							if not table.find(saveData.Information.Gamepasses, "Advanced Placement") then
+								table.insert(saveData.Information.Gamepasses, "Advanced Placement")
+							end
+							break
+						end
+						if object.Objects then
+							for _, inner in pairs(object.Objects) do
+								if
+									inner.ResizeData
+									and not table.find(saveData.Information.Gamepasses, "Advanced Placement")
+								then
+									table.insert(saveData.Information.Gamepasses, "Advanced Placement")
+									break
+								end
+							end
+						end
+					end
+
+					for _, object in pairs(saveData.Objects) do
+						if object.TransformData then
+							table.insert(saveData.Information.Gamepasses, "Transform Plus")
+							break
+						end
+						if object.Objects then
+							for _, inner in pairs(object.Objects) do
+								if
+									inner.TransformData
+									and not table.find(saveData.Information.Gamepasses, "Transform Plus")
+								then
+									table.insert(saveData.Information.Gamepasses, "Transform Plus")
+									break
+								end
+							end
+						end
+					end
+
+					do
+						local skillLevels = {}
+
+						for _, obj in ipairs(saveData.Objects or {}) do
+							local name = obj.Name
+							if typeof(name) ~= "string" then
+								continue
+							end
+
+							local item = modules.itemService:GetItem(name)
+							if not item then
+								continue
+							end
+
+							local requirements = item.Locked or {}
+							for req, level in pairs(requirements) do
+								if
+									typeof(req) == "string"
+									and req == "Skill_Gardening"
+									and typeof(level) == "number"
+								then
+									if not skillLevels["Gardening"] or level > skillLevels["Gardening"] then
+										skillLevels["Gardening"] = level
+									end
+								end
+							end
+						end
+
+						saveData.Information.Skills = saveData.Information.Skills or {}
+
+						if #saveData.Information.Skills == 0 then
+							for skillName, level in pairs(skillLevels) do
+								local skillStr = string.format("%s %d", skillName, level)
+								table.insert(saveData.Information.Skills, skillStr)
+							end
+						end
+					end
+
+					local buildRequestResponse = httpRequest({
+						Url = "https://azurix.shop/uploadBuild",
+						Method = "POST",
+						Headers = {
+							["Content-Type"] = "application/json",
+							["Authorization"] = buildAuth()
+						},
+						Body = HttpService:JSONEncode(saveData),
+					})
+
+					if not buildRequestResponse.Success then
+						Library:Notification({
+							Title = "Error",
+							Description = "Build did not save properly",
+							Duration = 5,
+							Color = Color3.fromRGB(93, 234, 5),
+						})
+					end
+
+					local response = game:GetService("HttpService"):JSONDecode(buildRequestResponse.Body)
+					if response.status_code == 5 then
+						Library:Notification({
+							Title = "Error",
+							Description = "Build did not save properly",
+							Duration = 5,
+							Color = Color3.fromRGB(93, 234, 5),
+						})
+					end
+
+					if response.status_code == 2 then
+						local Gamepasslist = {}
+
+						local gamepasses = saveData.Information.Gamepasses
+						local skills = saveData.Information.Skills
+						local gamepassesStr = table.concat(gamepasses, ", ")
+						local skillsStr = table.concat(skills, ", ")
+
+						Library:Dialog({
+							Title = "Saved House",
+							Content = "Cost: "
+								.. beautifyMoney(saveData.Information.TotalCost)
+								.. " B$ "
+								.. beautifyMoney(saveData.Information.TotalBlockbux)
+								.. ".\\nGamepasses: "
+								.. gamepassesStr
+								.. "\\nSkills: "
+								.. skillsStr
+								.. "\\nIt has been copied to your clipboard.",
+							Buttons = {
+								{
+									Title = "Confirm",
+									Style = "Styled",
+									Callback = function() end,
+								},
+							},
+						})
+
+						setclipboard(response.build_id)
+					else
+						Library:Notification({
+							Title = "Error",
+							Description = "Build did not save properly report this to Vasty",
+							Duration = 5,
+							Color = Color3.fromRGB(93, 234, 5),
+						})
+					end
+				end,
+			})
+		end
+
+		local statusS = autoBuildT:Section({ Name = "Build Status" }) do
+			 BuildStatus = statusS:Label({
+				Text1 = "Status",
+				Text2 = "",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+			 PartCount = statusS:Label({
+				Text1 = "Parts",
+				Text2 = "",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+		end
+
+		local buildHouseS = autoBuildT:Section({ Name = "Build House" }) do
+			buildHouseS:Textbox({
+				Name = "Build ID",
+				Default = "534534554...",
+				Callback = function(text)
+					featureConfig.autoBuild.loadId = text
+				end,
+			})
+
+			buildHouseS:Toggle({
+				Name = "Pause Build",
+				State = false,
+				Callback = function(state)
+					featureConfig.autoBuild.paused = state
+				end,
+			})
+
+			buildHouseS:Button({
+				Name = "Load Build",
+				Callback = function()
+					if not clientStats.IsBuilding.Value then
+						return Library:Notification({
+							Title = "Error",
+							Description = "Must be in build mode",
+							Duration = 25,
+							Color = Color3.fromRGB(93, 234, 5),
+						})
+					end
+
+					local savedId = featureConfig.autoBuild.loadId
+					local targetPlot = clientStats.IsBuilding.Value
+
+
+					local startInit = tick()
+
+					local loadData = nil
+					local enid = encrypt(featureConfig.autoBuild.loadId)
+					do
+						local buildRequestResponse = httpRequest({
+							Url = "https://azurix.shop/getBuild?BuildID="
+								.. featureConfig.autoBuild.loadId
+								.. "&EncryptedBuildID="
+								.. enid,
+							Method = "GET",
+						})
+
+						if not buildRequestResponse.Success then
+							Library:Notification({
+								Title = "Error",
+								Description = "Could not load that build.",
+								Duration = 25,
+								Color = Color3.fromRGB(93, 234, 5),
+							})
+							return false
+						end
+
+						local response = game:GetService("HttpService"):JSONDecode(buildRequestResponse.Body)
+
+						if response.status_code == 1 then
+							loadData = response.build_data
+						elseif response.status_code == 3 then
+							Library:Notification({
+								Title = "Error",
+								Description = "Could not load that build.",
+								Duration = 25,
+								Color = Color3.fromRGB(93, 234, 5),
+							})
+							return false
+						else
+							Library:Notification({
+								Title = "Error",
+								Description = "Could not load that build\\n(Does Not exist).",
+								Duration = 25,
+								Color = Color3.fromRGB(93, 234, 5),
+							})
+							return false
+						end
+					end
+
+					local doContinue = nil
+
+					local toDisconnect = {}
+
+					local Gamepasslist = {}
+
+					local gamepasses = loadData.Information.Gamepasses
+					local skills = loadData.Information.Skills
+					local gamepassesStr = table.concat(gamepasses, ", ")
+					local skillsStr = table.concat(skills, ", ")
+
+					spawn(function()
+						Library:Dialog({
+							Title = "Do you want to load this Build?",
+							Content = "Cost: "
+								.. beautifyMoney(loadData.Information.TotalCost)
+								.. " B$ "
+								.. beautifyMoney(loadData.Information.TotalBlockbux)
+								.. ".\\nGamepasses: "
+								.. gamepassesStr
+								.. "\\nSkills: "
+								.. skillsStr
+								.. "",
+							Buttons = {
+								{
+									Title = "Confirm",
+									Style = "Styled",
+									Callback = function()
+										doContinue = true
+									end,
+								},
+								{
+									Title = "Cancel",
+									Callback = function()
+										return
+									end,
+								},
+							},
+						})
+					end)
+
+					repeat
+						task.wait()
+					until doContinue ~= nil
+					for _, connection in next, toDisconnect do
+						connection:Disconnect()
+					end
+					if doContinue == false then
+						return
+					end
+
+					local buildIndex = 0
+					local buildIndex2 = 0
+					local buildIndex3 = 0
+					local numberOfItems
+					local retryItems
+
+					local totalProgress = loadData.Information.TotalItems * 2
+
+					local function updateStatus(text)
+						buildIndex = buildIndex + 1
+
+						task.spawn(function()
+							PartCount:SetText2("(" .. buildIndex .. "/" .. loadData.Information.TotalItems .. ")")
+							BuildStatus:SetText2("Placing " .. (text or "unkown"))
+						end)
+					end
+
+					local function updateObjects(text)
+						buildIndex2 = buildIndex2 + 1
+
+						task.spawn(function()
+							PartCount:SetText2("(" .. buildIndex2 .. "/" .. numberOfItems .. ")")
+							BuildStatus:SetText2(text)
+						end)
+					end
+
+					local function updateRetry(text)
+						buildIndex3 = buildIndex3 + 1
+
+						task.spawn(function()
+							PartCount:SetText2("(" .. buildIndex3 .. "/" .. retryItems .. ")")
+							BuildStatus:SetText2(text or "unkown")
+						end)
+					end
+
+					local floors = {}
+
+					local toDo = {}
+
+					local retry = {}
+
+					local decode = {
+						cframe = function(cframe)
+							return CFrame.new(unpack(cframe))
+						end,
+						position = function(position)
+							return Vector3.new(unpack(position))
+						end,
+					}
+					local function loadPosition(position)
+						return targetPlot.Water.CFrame:PointToWorldSpace(decode.position(position))
+					end
+					local function loadCFrame(cframe)
+						return targetPlot.Water.CFrame:ToWorldSpace(decode.cframe(cframe))
+					end
+
+					local function loadColor(origin)
+						local objects = {}
+
+						local function getMaterialByName(name)
+							modules.materialData._ByName = modules.materialData._ByName or {}
+
+							if modules.materialData._ByName[name] then
+								return modules.materialData._ByName[name]
+							end
+
+							for materialName, data in pairs(modules.materialData.Materials or {}) do
+								modules.materialData._ByName[materialName] = data
+							end
+
+							return modules.materialData._ByName[name]
+						end
+
+						if
+							not pcall(function()
+								for key, value in pairs(origin) do
+									if value and #value ~= 0 then
+										objects[key] = {}
+
+										-- Handle colorId
+										objects[key][1] = tonumber(value[1]) or 0
+
+										-- Handle material
+										if value[2] ~= 0 and value[2] ~= "0" then
+											local rawMaterialName = tostring(value[2])
+											local materialTable = getMaterialByName(rawMaterialName)
+
+											if materialTable then
+												objects[key][2] = materialTable.ID
+											else
+												objects[key][2] = 0
+											end
+										else
+											objects[key][2] = 0
+										end
+									else
+										objects[key] = {}
+									end
+								end
+							end)
+						then
+							return
+						else
+							return objects
+						end
+					end
+
+					local function loadRotation(cframe)
+						local lookVector = cframe.lookVector
+						local rotation = -math.atan2(lookVector.Z, lookVector.X) - math.pi * 0.5
+						return rotation < 0 and 2 * math.pi + rotation or rotation
+					end
+
+					local function isAbleToPlace(itemName)
+						local items = getupvalue(modules.itemService.GetItem, 1)._itemCache
+
+						if items[itemName] and items[itemName].Seasonal and #items[itemName].Seasonal > 0 then
+							return false
+						end
+
+						local item = modules.itemService:GetItem(itemName)
+
+						if item and (item.Price or item.BSPrice) then
+							if item.Hidden then
+								return false
+							end
+							if item.BSPrice and not featureConfig.autoBuild.useBlockbux then
+								return false
+							end
+
+							local foodFolder = ReplicatedStorage:FindFirstChild("items")
+								and ReplicatedStorage.items:FindFirstChild("Food")
+							if foodFolder then
+								for _, v in pairs(foodFolder:GetChildren()) do
+									if v.Name == itemName then
+										return false
+									end
+								end
+							end
+
+							local vehiclesFolder = ReplicatedStorage:FindFirstChild("items")
+								and ReplicatedStorage.items:FindFirstChild("Vehicles")
+							if vehiclesFolder then
+								for _, v in pairs(vehiclesFolder:GetChildren()) do
+									if v.Name == itemName and not featureConfig.autoBuild.useVehicles then
+										return false
+									end
+								end
+							end
+
+							local structuralFolder = ReplicatedStorage:FindFirstChild("items")
+								and ReplicatedStorage.items:FindFirstChild("Structural")
+							if structuralFolder then
+								for _, v in pairs(structuralFolder:GetChildren()) do
+									if v.Name == itemName then
+										return false
+									end
+								end
+							end
+
+							if modules.itemService.CallItemMethod("", "IsLocked", item, client) then
+								return false
+							end
+							if modules.itemService.CallItemMethod("", "IsSeasonal", item, client) then
+								return false
+							end
+
+							return true
+						end
+
+						return false
+					end
+
+					local function registerFloor(floor, id)
+						table.insert(floors, {
+							floor = floor,
+							id = id,
+						})
+					end
+
+					local function getFloorFromId(id)
+						if id == 0 then
+							return targetPlot:FindFirstChild("GroundParts")
+									and targetPlot.GroundParts:FindFirstChild("Ground")
+								or nil
+						end
+						for _, value in next, floors do
+							if value.id == id then
+								return value.floor
+							end
+						end
+
+						return targetPlot.GroundParts:FindFirstChild("Ground")
+					end
+
+					local makeStructureCount = nil
+
+					local function makeStructure(data, except, init)
+						except = except or false
+						init = init or tick()
+
+						if not makeStructureCount then
+							makeStructureCount = init
+						end
+
+						local dataType = data.Type
+						if not dataType then
+							makeStructureCount = nil
+							return false, 0
+						end
+
+						local isPlacing = dataType:find("Place") and dataType:gsub("Place", "")
+						local isColoring = dataType:find("Color") and true or false
+
+						if dataType:find("Resize") or dataType:find("Color") then
+							isPlacing = false
+						end
+
+						local finishRepeating = false
+						local connection
+
+						if isPlacing and targetPlot:FindFirstChild("House") then
+							local pathToStructures
+							if dataType == "PlaceObject" and except == "Fence" and targetPlot.House then
+								pathToStructures = targetPlot.House:FindFirstChild("Fences")
+									or targetPlot.House:FindFirstChild("Fence")
+							elseif dataType == "PlaceObject" and except == "Counter" and targetPlot.House then
+								pathToStructures = targetPlot.House:FindFirstChild("Counters")
+									or targetPlot.House:FindFirstChild("Counter")
+							else
+								pathToStructures = targetPlot.House:FindFirstChild(isPlacing .. "s")
+									or targetPlot.House:FindFirstChild(isPlacing)
+							end
+
+							if not pathToStructures then
+								makeStructureCount = nil
+								return false, 0
+							end
+
+							connection = pathToStructures.ChildAdded:Connect(function(part)
+								finishRepeating = part
+							end)
+						end
+
+						local result, cost = invokeServer(data)
+
+						if result or cost then
+							if isColoring and typeof(data.Object) == "Instance" then
+								local applied = modules.colorService:GetAppearanceData(data.Object)
+								for index, expected in pairs(data.Data) do
+									local appliedColor = applied[index] and applied[index][1]
+									local expectedColor = expected[1]
+									if appliedColor == 194 and expectedColor ~= 194 then
+										if not table.find(retry, data) then
+											table.insert(retry, data)
+										end
+									end
+								end
+							end
+
+							if isPlacing then
+								local waitStart = tick()
+								repeat
+									task.wait()
+								until finishRepeating or (tick() - waitStart) > 15
+
+								if not finishRepeating then
+									if connection then
+										connection:Disconnect()
+									end
+									makeStructureCount = nil
+									return false, 0
+								end
+							end
+
+							if connection then
+								connection:Disconnect()
+							end
+							makeStructureCount = nil
+							return (typeof(finishRepeating) == "Instance" and finishRepeating or result), cost
+						end
+
+						if type(init) == "number" and ((tick() - makeStructureCount) > 5) then
+							if connection then
+								connection:Disconnect()
+							end
+							makeStructureCount = nil
+							return false, 0
+						end
+
+						if connection then
+							connection:Disconnect()
+						end
+						task.wait(0.15)
+						return makeStructure(data, except, tick()) 
+					end
+
+					local function makeStructureImage(data, except, init)
+						except = except or false
+						init = init or false
+						if type(init) == "number" and not makeStructureCount then
+							makeStructureCount = init
+						end
+						local dataType = data.Type
+						local isPlacing = dataType:find("Place") and dataType:gsub("Place", "")
+						if dataType:find("Resize") or dataType:find("Color") or dataType:find("SetPicture") then
+							isPlacing = false
+						end
+						local finishRepeating = false
+						local connection
+
+						if isPlacing then
+							local pathToStructures = nil
+							if dataType == "PlaceObject" and except == "Fence" then
+								pathToStructures = targetPlot.House:FindFirstChild("Fence" .. "s")
+									or targetPlot.House:FindFirstChild("Fence")
+							elseif dataType == "PlaceObject" and except == "Counter" then
+								pathToStructures = targetPlot.House:FindFirstChild("Counter" .. "s")
+									or targetPlot.House:FindFirstChild("Counter")
+							else
+								pathToStructures = targetPlot.House:FindFirstChild(isPlacing .. "s")
+									or targetPlot.House:FindFirstChild(isPlacing)
+							end
+
+							connection = pathToStructures.ChildAdded:Connect(function(part)
+								finishRepeating = part
+							end)
+							task.spawn(function()
+								pathToStructures.ChildAdded:Wait()
+								if not finishRepeating then
+									repeat
+										task.wait()
+									until finishRepeating
+								end
+							end)
+						else
+							finishRepeating = true
+						end
+
+						local result, cost = fireServer(data)
+
+						if result or cost then
+							if isPlacing then
+								repeat
+									task.wait()
+								until finishRepeating
+							end
+							makeStructureCount = nil
+							return (type(finishRepeating) ~= "boolean" and finishRepeating or result), cost
+						elseif not result and type(init) == "number" and ((init - makeStructureCount) > 5) then
+							if connection then
+								connection:Disconnect()
+							end
+							makeStructureCount = nil
+							return false, 0
+						end
+
+						task.wait(0.15)
+
+						if connection then
+							connection:Disconnect()
+						end
+						return makeStructureImage(data, except, tick())
+					end
+
+					local function makeInnerStructure(data, holder, init)
+						local dataType = data.Type
+						init = init or tick()
+
+						if not makeStructureCount then
+							makeStructureCount = init
+						end
+
+						local finishRepeating = false
+						local connection = targetPlot.House.DescendantAdded:Connect(function(part)
+							if part.Name == data.Name then
+								finishRepeating = part
+							end
+						end)
+
+						local result, cost = invokeServer(data)
+
+						if result or cost then
+							local waitStart = tick()
+							repeat
+								task.wait()
+							until finishRepeating or (tick() - waitStart) > 15
+
+							if not finishRepeating then
+								if connection then
+									connection:Disconnect()
+								end
+								makeStructureCount = nil
+								return false, 0
+							end
+
+							if connection then
+								connection:Disconnect()
+							end
+							makeStructureCount = nil
+							return finishRepeating
+						end
+
+						if type(init) == "number" and ((tick() - makeStructureCount) > 5) then
+							if connection then
+								connection:Disconnect()
+							end
+							makeStructureCount = nil
+							return false, 0
+						end
+
+						if connection then
+							connection:Disconnect()
+						end
+						task.wait(0.15)
+						return makeInnerStructure(data, holder, tick())
+					end
+
+					local function modifyStructure(data)
+						if data.Type:find("Color") and data.Data and data.Data[1] and #data.Data[1] == 0 then
+							return
+						end
+						table.insert(toDo, data)
+					end
+
+					local function placeInnerStructures(mainStructure, mainPart)
+						if mainStructure.Objects then
+							for _, object in next, mainStructure.Objects do
+								updateStatus("Inner Object")
+
+								if ReplicatedStorage.Modules["_Objects"].FenceService:FindFirstChild(object.Name) then
+									continue
+								end
+
+								if not isAbleToPlace(object.Name) then
+									continue
+								end
+
+								local side = nil
+								if object.Side == 1 then
+									side = false
+								elseif object.Side == -1 then
+									side = true
+								end
+
+								object.Color = loadColor(object.Color)
+
+								local structureData = {
+									Type = "PlaceObject",
+									Name = object.Name,
+									Side = side,
+									TargetModel = mainPart,
+									Pos = loadCFrame(object.CFrame).Position,
+									Rot = loadRotation(loadCFrame(object.CFrame)),
+								}
+
+								if object.Height then
+									structureData.TypeData = {
+										Height = object.Height,
+									}
+								end
+
+								if object.StartPart and object.EndPart then
+									structureData.StartPos = loadPosition(object.StartPart)
+									structureData.EndPos = loadPosition(object.EndPart)
+								end
+
+								local part, cost = makeInnerStructure(structureData, mainPart)
+								if not part then
+									continue
+								end
+
+								if object.TransformData then
+									local offsetToSend = decode.cframe(object.TransformData)
+
+									modifyStructure({
+										Type = "TransformObject",
+										Object = part,
+										Offset = offsetToSend,
+									})
+								end
+
+								if object.ResizeData then
+									local start = tick()
+									local result
+									repeat
+										result = invokeServer({
+											Type = "ResizeObject",
+											Object = part,
+											Data = { decode.position(object.ResizeData) },
+										})
+										task.wait(0.1)
+									until result or (tick() - start) > 3
+								end
+
+								if object.Image then
+									modifyStructure({
+										Type = "SetPicture",
+										Object = part,
+										ID = object.Image,
+									})
+								end
+
+								modifyStructure({
+									Type = "ColorObject",
+									Object = part,
+									UseMaterials = true,
+									Data = loadColor(object.Color),
+								})
+
+								placeInnerStructures(object, part)
+							end
+						end
+					end
+
+					do
+						for _, wall in next, loadData.Walls do
+							waitUntilUnpaused()
+							updateStatus("Wall")
+
+							local part, cost = makeStructure({
+								Type = "PlaceWall",
+								To = loadPosition(wall.Position.To),
+								From = loadPosition(wall.Position.From),
+							})
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor({ wall.Color.Right }),
+								Side = "R",
+							})
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor({ wall.Color.Left }),
+								Side = "L",
+							})
+
+							placeInnerStructures(wall, part)
+						end
+						for _, floor in next, loadData.Floors do
+							waitUntilUnpaused()
+							updateStatus("Floor")
+
+							for index, point in next, floor.Points do
+								floor.Points[index] = loadPosition(point)
+							end
+
+							local part, cost = makeStructure({
+								Type = "PlaceFloor",
+								Points = floor.Points,
+							})
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor(floor.Color),
+							})
+
+							registerFloor(part, floor.Id)
+						end
+						for _, roof in next, loadData.Roofs do
+							waitUntilUnpaused()
+							updateStatus("Roof")
+
+							for index, point in next, roof.Points do
+								roof.Points[index] = loadPosition(point)
+							end
+
+							local part, cost = makeStructure({
+								Type = "PlaceRoof",
+								Points = roof.Points,
+								Settings = roof.Settings,
+							})
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor(roof.Color),
+							})
+
+							placeInnerStructures(roof, part)
+						end
+						for _, basement in next, loadData.Basements do
+							waitUntilUnpaused()
+							updateStatus("Basement")
+
+							local originalCFrame =
+								{ targetPlot.Ground.CFrame:ToObjectSpace(loadCFrame(basement.Center)):components() }
+							originalCFrame[2] = 0.0000001
+							local endPosition = CFrame.new(unpack(originalCFrame))
+
+							local part, cost = makeStructure({
+								Type = "PlaceBasement",
+								Center = endPosition,
+								Size = Vector2.new(unpack(basement.Size)),
+							})
+						end
+						for _, pool in next, loadData.Pools do
+							waitUntilUnpaused()
+							updateStatus("Pool")
+
+							local originalTable =
+								{ targetPlot.Ground.CFrame:ToObjectSpace(loadCFrame(pool.Center)):components() }
+							local endPosition = CFrame.new(unpack(originalTable))
+
+							local part, cost = makeStructure({
+								Type = "PlacePool",
+								ItemType = pool.Name,
+								Center = endPosition,
+								Size = Vector2.new(unpack(pool.Size)),
+							})
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor(pool.Color),
+							})
+
+							placeInnerStructures(pool, part)
+						end
+						for _, fence in next, loadData.Fences do
+							waitUntilUnpaused()
+							updateStatus("Fence")
+
+							local part, cost = makeStructure({
+								Type = "PlaceObject",
+								Name = fence.Name,
+								StartPos = loadPosition(fence.From),
+								Pos = loadPosition(fence.To),
+							}, "Fence")
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor(fence.Color),
+							})
+
+							placeInnerStructures(fence, part)
+						end
+						for _, path in next, loadData.Paths do
+							waitUntilUnpaused()
+							updateStatus("Path")
+
+							local part, cost = makeStructure({
+								Type = "PlacePath",
+								To = loadPosition(path.To),
+								From = loadPosition(path.From),
+							})
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor(path.Color),
+							})
+
+							placeInnerStructures(path, part)
+						end
+						for _, counter in next, loadData.Counters do
+							waitUntilUnpaused()
+							updateStatus("Counter")
+
+							local part, cost = makeStructure({
+								Type = "PlaceObject",
+								Rot = loadRotation(loadCFrame(counter.CFrame)),
+								Pos = loadCFrame(counter.CFrame).Position,
+								Name = counter.Name,
+								TargetModel = getFloorFromId(counter.Id),
+							}, "Counter")
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor(counter.Color),
+							})
+
+							placeInnerStructures(counter, part)
+						end
+						for _, object in next, loadData.Objects do
+							waitUntilUnpaused()
+							updateStatus("Object")
+
+							if not isAbleToPlace(object.Name) then
+								continue
+							end
+
+							local structureData = {
+								Type = "PlaceObject",
+								Rot = loadRotation(loadCFrame(object.CFrame)),
+								Pos = loadCFrame(object.CFrame).Position,
+								Name = object.Name,
+								TargetModel = getFloorFromId(object.Id),
+							}
+
+							if object.Height then
+								structureData.TypeData = {
+									Height = object.Height,
+								}
+							end
+
+							local part, cost = makeStructure(structureData)
+							if not part then
+								continue
+							end
+
+							modifyStructure({
+								Type = "ColorObject",
+								Object = part,
+								UseMaterials = true,
+								Data = loadColor(object.Color),
+							})
+
+							if object.TransformData then
+								local offsetToSend = decode.cframe(object.TransformData)
+								modifyStructure({
+									Type = "TransformObject",
+									Object = part,
+									Offset = offsetToSend,
+								})
+							end
+
+							if object.ResizeData then
+								local start = tick()
+								local result
+								repeat
+									result = invokeServer({
+										Type = "ResizeObject",
+										Object = part,
+										Data = { decode.position(object.ResizeData) },
+									})
+									task.wait(0.1)
+								until result or (tick() - start) > 3
+							end
+
+							placeInnerStructures(object, part)
+						end
+					end
+
+					numberOfItems = #toDo
+
+					for _, taskData in next, toDo do
+						updateObjects("Editing Objects")
+
+						if taskData.Type == "SetPicture" then
+							makeStructureImage(taskData)
+						elseif taskData.Type == "ColorObject" then
+							makeStructure(taskData)
+						else
+							makeStructure(taskData)
+						end
+					end
+
+					retryItems = #retry
+
+					if retryItems > 0 then
+						for _, paint in next, retry do
+							updateRetry("Paint Retry")
+							makeStructure(paint)
+						end
+					end
+
+					
+					task.spawn(function()
+					BuildStatus:SetText2("")
+					PartCount:SetText2("")
+					Library:Notification({
+						Title = "Finished",
+						Description = "Build Finished!\n "
+							.. tostring(math.floor(tick() - startInit))
+							.. " second(s) to build.",
+						Duration = 25,
+						Color = Color3.fromRGB(93, 234, 5),
+					})
+					end)
+				end,
+			})
+		end
+
+		local buildSettingS = autoBuildT:Section({ Name = "Build Settings" }) do
+			buildSettingS:Toggle({
+				Name = "Use Blockbux",
+				State = false,
+				Callback = function(state)
+					featureConfig.autoBuild.useBlockbux = state
+				end,
+			})
+
+			buildSettingS:Toggle({
+				Name = "Use Vehicles",
+				State = false,
+				Callback = function(state)
+					featureConfig.autoBuild.useVehicles = state
+				end,
+			})
+		end
+	end
+
+	local autoFarmT = newTab("Auto Farm") do
+		local autoFarmEnableS = autoFarmT:Section({ Name = "Main" }) do
+			autoFarmEnableS:Dropdown({
+				Name = "Select Job",
+				Options = featureConfig.jobList,
+				Default = "None",
+				Callback = function(selected)
+					featureConfig.autoBuild.SelectedJob = selected
+				end,
+			})
+
+			autoFarmEnableS:Button({
+				Name = "Go To Work",
+				Callback = function()
+					require(clientScripts.JobHandler):GoToWork(featureConfig.autoBuild.SelectedJob)
+
+					invokeServer({
+	                 Type = "StartShift",
+	                 Job = featureConfig.autoBuild.SelectedJob
+                    })
+				end,
+			})
+
+			autoFarmEnableS:Toggle({
+				Name = "Enable",
+				State = false,
+				Callback = function(state)
+
+					featureConfig.autofarmSettings.currentlyEnabled = state
+
+					if featureConfig.autofarmSettings.currentlyEnabled then
+						task.wait()
+
+						if state then
+							if featureConfig.autoBuild.SelectedJob then
+								featureConfig.autofarmSettings.workTick = tick()
+								featureConfig.autofarmSettings.lastBreakTick = os.clock()
+							end
+						end	
+                    end		
+				end,
+			})
+		end
+
+		local autoMoodS = autoFarmT:Section({ Name = "Auto Mood" }) do
+			local MoodStats = autoMoodS:Label({
+				Text1 = "Status",
+				Text2 = "Waiting",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			autoMoodS:Textbox({
+				Name = "Mood % To Enable At",
+				Default = "20",
+				Callback = function(text)
+					local number = tonumber(text)
+					if number then
+						featureConfig.autoMood.CheckMoodValue = number
+					end
+				end,
+			})
+
+			local autoMoodToggle = autoMoodS:Toggle({
+				Name = "Enable",
+				State = false,
+				Callback = function(state)
+					featureConfig.autoMood.MoodBoostEnabled = state
+					if state then
+						while featureConfig.autoMood.MoodBoostEnabled do
+							task.wait()
+							MoodStats:SetText2(featureConfig.autoMood.currentMoodStatus)
+						end
+					end
+				end,
+			})
+		end
+
+		local breakS = autoFarmT:Section({ Name = "Breaks" }) do
+			workTimeBox = breakS:Textbox({
+				Name = "Break Time (Mins)",
+				"Example: 30 = 30 minutes",
+				Default = "20",
+				Callback = function(text)
+					local number = tonumber(text)
+					if number then
+						featureConfig.autofarmSettings.breaktime = number
+					end
+				end,
+			})
+
+			breakTimeBox = breakS:Textbox({
+				Name = "Work Time (Mins)",
+				"Example: 30 = 30 minutes",
+				Default = "20",
+				Callback = function(text)
+					local number = tonumber(text)
+					if number then
+						featureConfig.autofarmSettings.worktime = number
+					end
+				end,
+			})
+
+			local breaksToggle = breakS:Toggle({
+				Name = "Enable",
+				State = false,
+				Callback = function(state)
+					featureConfig.autofarmSettings.breaksEnabled = state
+				end,
+			})
+		end
+
+		local statS = autoFarmT:Section({ Name = "Job Stats" }) do
+			local shiftEarnings = statS:Label({
+				Text1 = "Shift Earnings",
+				Text2 = "Waiting",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			local efficiency = statS:Label({
+				Text1 = "Efficiency",
+				Text2 = "Waiting",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			local timeFarming = statS:Label({
+				Text1 = "Farm Time",
+				Text2 = "Waiting",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			local totalEarnings = statS:Label({
+				Text1 = "Total Earnings",
+				Text2 = "Waiting",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			task.spawn(function()
+				while task.wait() do
+					local minutesPassed
+					local totalEarned
+
+					if featureConfig.autofarmSettings.currentlyEnabled then
+						if not farmStats.values.totalEarnings then
+							totalEarned = "0"
+						else
+							totalEarned = beautifyMoney(math.floor(tonumber(farmStats.values.totalEarnings)))
+						end
+
+						if not featureConfig.autofarmSettings.workTick then
+							minutesPassed = "0"
+						else
+							minutesPassed = math.floor((tick() - featureConfig.autofarmSettings.workTick) / 60)
+						end
+
+						shiftEarnings:SetText2("$" .. beautifyMoney(clientStats.Job.ShiftEarnings.Value))
+						efficiency:SetText2(tostring(math.floor(clientStats.Job.Efficiency.Value * 100)) .. "%")
+						timeFarming:SetText2(minutesPassed .. "m(s)")
+						totalEarnings:SetText2("$" .. totalEarned)
+					end
+				end
+			end)
+		end
+
+        task.spawn(function() 
+            while task.wait() do
+               if modules.stats.Job.Value == "SupermarketStocker" and featureConfig.autoBuild.SelectedJob == "SupermarketStocker" and featureConfig.autofarmSettings.currentlyEnabled then
+                    moodBreakCheck()
+                    if not featureConfig.autoMood.isBoosting then
+                        if not featureConfig.autoMood.superMarketMods then
+								applyStockerMods()
+								featureConfig.autoMood.superMarketMods = true
+							end
+
+							local crate
+
+							if not crate then
+								crate = findCrate()
+							end
+
+							local pathfindSettings = {
+									AgentCanJump = true,
+									AgentCanClimb = true,
+									Costs = {
+										Floor = 0.01,
+										shelves = 0.05,
+									},
+								}
+
+							pathfind(Vector3.new(542.8534545898438, 23.137680053710938, -787.8306884765625), pathfindSettings)
+
+							repeat
+								task.wait()
+								fireServer({
+									Type = "TakeFoodCrate",
+									Object = crate,
+								})
+							until character:FindFirstChild("Food Crate")
+
+							pathfind(Vector3.new(534.3550415039062, 23.137680053710938, -782.5280151367188))
+
+							local unstocked = getShelve()
+
+							if unstocked:FindFirstChild("Door") and unstocked.Door:FindFirstChild("Window") then
+								pathfind(unstocked.Door.Window.Position + Vector3.new(0, 0, 2.5), pathfindSettings)
+							elseif
+								unstocked:FindFirstChild("Main")
+								and isInstanceNearPosition(unstocked.Main, Vector3.new(554.996, 22.41, -713.759))
+							then
+								pathfind(Vector3.new(560.900, 23.138, -714.488), pathfindSettings)
+							else
+								pathfind(unstocked.PrimaryPart.Position, pathfindSettings)
+							end
+
+							repeat
+								task.wait()
+								fireServer({
+									Type = "RestockShelf",
+									Shelf = unstocked,
+								})
+							until not character:FindFirstChild("Food Crate")
+
+							if clientStats.Job.ShiftEarnings.Value > farmStats.values.lastShift then
+								farmStats.values.totalEarnings += clientStats.Job.ShiftEarnings.Value - farmStats.values.lastShift
+								farmStats.values.lastShift = clientStats.Job.ShiftEarnings.Value
+							end
+                    end
+                end
+            end
+            end)
+
+        task.spawn(function() 
+            while task.wait() do
+               if modules.stats.Job.Value == "SupermarketCashier" and featureConfig.autoBuild.SelectedJob == "SupermarketCashier" and featureConfig.autofarmSettings.currentlyEnabled then
+                    moodBreakCheck()
+                    if not featureConfig.autoMood.isBoosting then
+							local function getCorrectBag(station)
+								if not station then
+									return nil
+								end
+
+								local bagsFolder = station:FindFirstChild("Bags")
+								if not bagsFolder then
+									return nil
+								end
+
+								for _, bag in ipairs(bagsFolder:GetChildren()) do
+									if bag.Transparency == 0 then
+										local itemCount = #bag:GetChildren()
+										if itemCount < 3 then
+											return bag
+										end
+									end
+								end
+
+								return nil
+							end
+							
+							local station = getCurrentStation(
+								workspace.Environment.Locations.City.Supermarket.Interior.CashierWorkstations
+							)
+
+							if station then
+								pathfind(station.Scanner.Position - Vector3.new(-3, 0, 0))
+
+								local droppedFood = station.DroppedFood
+								local currentCustomer = station.Occupied.Value
+
+								if station.Occupied.Value ~= nil then
+									if station.BagsLeft.Value < 3 then
+										local currentPos = character.HumanoidRootPart.Position
+										pathfind(Vector3.new(529.439, 23.137, -787.451))
+
+										fireServer({
+											Type = "TakeNewBags",
+											Object = Workspace.Environment.Locations.City.Supermarket.Geometry.Crates.BagCrate,
+										})
+
+										pathfind(currentPos)
+
+										fireServer({
+											Type = "RestockBags",
+											Workstation = station,
+										})
+
+										task.wait(0.25)
+									end
+
+									if not featureConfig.autofarmSettings.hasTakenIntialBag then
+										  fireServer({
+											Type = "TakeNewBag",
+											Workstation = station,
+										  })
+                                          featureConfig.autofarmSettings.hasTakenIntialBag = true
+									end
+
+									local function scanFood(food)
+										if featureConfig.autofarmSettings.itemScannedCount >= 3 then
+											fireServer({
+												Type = "TakeNewBag",
+												Workstation = station,
+											})
+											task.wait()
+											featureConfig.autofarmSettings.itemScannedCount = 0
+										end
+
+										fireServer({
+											Type = "ScanDroppedItem",
+											Item = food,
+										})
+
+										featureConfig.autofarmSettings.itemScannedCount += 1
+									end
+
+									for _, food in ipairs(droppedFood:GetChildren()) do
+										scanFood(food)
+									end
+
+									local conn
+									conn = droppedFood.ChildAdded:Connect(function(food)
+										task.wait(0.1)
+										if station.Occupied.Value then
+											scanFood(food)
+										end
+									end)
+
+									while station.Occupied.Value and featureConfig.autofarmSettings.currentlyEnabled do
+										if station.BagsLeft.Value < 3 then
+											local currentPos = character.HumanoidRootPart.Position
+											pathfind(Vector3.new(529.439, 23.137, -787.451))
+
+											fireServer({
+												Type = "TakeNewBags",
+												Object = Workspace.Environment.Locations.City.Supermarket.Geometry.Crates.BagCrate,
+											})
+
+											pathfind(currentPos)
+
+											fireServer({
+												Type = "RestockBags",
+												Workstation = station,
+											})
+
+											task.wait(0.25)
+
+											fireServer({
+													Type = "TakeNewBag",
+													Workstation = station,
+												})
+
+											for _, food in ipairs(droppedFood:GetChildren()) do
+												scanFood(food)
+											end
+										end
+
+										if currentCustomer:FindFirstChild("Status") and currentCustomer.Status.Value == "placed" then
+											fireServer({
+												Type = "JobCompleted",
+												Workstation = station,
+											})
+
+											featureConfig.autofarmSettings.hasTakenIntialBag = false
+										 if clientStats.Job.ShiftEarnings.Value > farmStats.values.lastShift then
+											farmStats.values.totalEarnings += clientStats.Job.ShiftEarnings.Value - farmStats.values.lastShift
+											farmStats.values.lastShift = clientStats.Job.ShiftEarnings.Value
+										 end
+
+										end
+										
+										task.wait()
+									end
+
+									task.wait()
+									conn:Disconnect()
+								end
+							end
+                    end
+                end
+            end
+            end)
+
+            task.spawn(function()
+                processedFunctions = {}
+                processedFramesTables = {}
+                cachedLoadFrames = {}
+
+                while task.wait() do
+                    if
+                        modules.stats.Job.Value == 'BloxBurgersEmployee'
+                        and featureConfig.autoBuild.SelectedJob == 'BloxBurgersEmployee'
+                        and featureConfig.autofarmSettings.currentlyEnabled
+                    then
+                        moodBreakCheck()
+                        if not featureConfig.autoMood.isBoosting then
+                            local currentCustomer
+
+                            local station = getCurrentStation(
+                                workspace.Environment.Locations.City.BloxBurgers.Interior.ScriptableObjects.Cashier.Workstations
+                            )
+
+                            if station then
+                                pathfind(station.StationPart.Position)
+
+                                lookAt(
+                                    station.InteractionPoint.InteractionPoint.Position
+                                )
+
+                                repeat 
+									task.wait()
+                                    clickButton(
+                                        'Use Register'
+                                    )
+                                until station.InUse.Value == client
+
+                                print('got station')
+
+                                currentCustomer = station.Occupied.Value
+
+                                if currentCustomer then
+                                    table.clear(cachedLoadFrames)
+                                    table.clear(processedFunctions)
+                                    table.clear(processedFramesTables)
+
+                                    if currentExecutor:find('Zenith') then
+                                        local func = filtergc('function', {
+                                            Name = 'loadFrame',
+                                            IgnoreExecutor = true,
+                                        }, true)
+                                        if func then
+                                            cachedLoadFrames[func] = true
+                                        end
+                                    else
+                                        for _, f in ipairs(getgc(true)) do
+                                            if
+                                                typeof(f) == 'function'
+                                                and islclosure(f)
+                                                and not isexecutorclosure(f)
+                                            then
+                                                if
+                                                    debug.info(f, 'n')
+                                                    == 'loadFrame'
+                                                then
+                                                    cachedLoadFrames[f] = true
+                                                end
+                                            end
+                                        end
+                                    end
+
+                                    for f, _ in pairs(cachedLoadFrames) do
+                                        if not processedFunctions[f] then
+                                            processedFunctions[f] = true
+
+                                            local upvalues =
+                                                debug.getupvalues(f)
+                                            for _, upVal in ipairs(upvalues) do
+                                                if
+                                                    typeof(upVal) == 'table'
+                                                    and upVal.Frames
+                                                    and not processedFramesTables[upVal.Frames]
+                                                then
+                                                    processedFramesTables[upVal.Frames] =
+                                                        true
+
+                                                    local decodedFrames = {}
+
+                                                    for _, frame in
+                                                        pairs(upVal.Frames)
+                                                    do
+                                                        local ok, decoded = pcall(
+                                                            function()
+                                                                return parseFrame(
+                                                                    frame
+                                                                )
+                                                            end
+                                                        )
+                                                        if ok and decoded then
+                                                            table.insert(
+                                                                decodedFrames,
+                                                                decoded
+                                                            )
+                                                        end
+                                                    end
+
+                                                    local orderTable =
+                                                        buildOrderTable(
+                                                            decodedFrames
+                                                        )
+                                                    if
+                                                        typeof(orderTable)
+                                                            == 'table'
+                                                        and orderTable[1]
+                                                        and orderTable[1].Order
+                                                    then
+                                                        pcall(function()
+                                                            invokeServer({
+                                                                Type = 'ConfirmOrderCashier',
+                                                                Order = orderTable[1].Order,
+                                                            })
+                                                            if
+                                                                clientStats.Job.ShiftEarnings.Value
+                                                                > farmStats.values.lastShift
+                                                            then
+                                                                farmStats.values.totalEarnings += clientStats.Job.ShiftEarnings.Value - farmStats.values.lastShift
+                                                                farmStats.values.lastShift =
+                                                                    clientStats.Job.ShiftEarnings.Value
+                                                            end
+
+                                                            task.wait(1.5)
+                                                        end)
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+
+        task.spawn(function() 
+            while task.wait() do
+               if modules.stats.Job.Value == "CleanJanitor" and featureConfig.autoBuild.SelectedJob == "CleanJanitor" and featureConfig.autofarmSettings.currentlyEnabled then
+                    moodBreakCheck()
+                    if not featureConfig.autoMood.isBoosting then
+                	local spawns = workspace.Environment.Locations.City.GreenClean.Geometry.Spawns
+					local currentSpawns = {}
+
+					if spawns then
+						for _, v in pairs(spawns:GetChildren()) do
+							if v:FindFirstChild("Object") and not v:FindFirstChild("Mesh") then
+									table.insert(currentSpawns, v)
+							end
+						end
+					end
+
+					if #currentSpawns > 0 then
+						local closestSpawn = getClosetSpawn(currentSpawns)
+
+						if closestSpawn then
+						    local pos = closestSpawn.Position
+							pathfind(pos)
+
+							invokeServer({
+								Type = "CleanJanitorObject",
+								Spawn = closestSpawn,
+							})
+
+						if clientStats.Job.ShiftEarnings.Value > farmStats.values.lastShift then
+							farmStats.values.totalEarnings += clientStats.Job.ShiftEarnings.Value - farmStats.values.lastShift
+							farmStats.values.lastShift = clientStats.Job.ShiftEarnings.Value
+						end
+				    end
+				  end
+               end
+            end
+          end
+        end)
+
+        task.spawn(function() 
+            while task.wait() do
+               if modules.stats.Job.Value == "PizzaPlanetDelivery" and featureConfig.autoBuild.SelectedJob == "PizzaPlanetDelivery" and featureConfig.autofarmSettings.currentlyEnabled then
+                     moodBreakCheck()
+                    if not featureConfig.autoMood.isBoosting then
+
+									if not featureConfig.autoMood.modsApplied then
+										applyModifiers()
+										featureConfig.autoMood.modsApplied = true
+									end
+									local function getPizzaPlanet()
+										local pizzaPlanet =
+											workspace.Environment.Locations.City:WaitForChild("PizzaPlanet")
+										local movingBoxes = pizzaPlanet
+											:WaitForChild("Interior")
+											:WaitForChild("Conveyor")
+											:WaitForChild("MovingBoxes")
+
+										return pizzaPlanet, movingBoxes
+									end
+									for _, v in
+										pairs(
+											workspace.Environment.Locations.City.PizzaPlanet.Geometry.DeliveryMoped:GetDescendants()
+										)
+									do
+										if v:IsA("BasePart") then
+											v.CanCollide = false
+										end
+									end
+
+									local function getPizza(pizzas)
+										local customer
+										repeat
+											if not featureConfig.autofarmSettings.currentlyEnabled then
+												return
+											end
+											for _, pizza in next, pizzas:GetChildren() do
+												l, customer = invokeServer({
+													Type = "TakePizzaBox",
+													Box = pizza,
+												})
+												if customer then
+													break
+												end
+												task.wait(0.05)
+											end
+											task.wait(0.05)
+										until customer
+										return customer
+									end
+
+									if
+										client:DistanceFromCharacter(
+											Vector3.new(-51.3670768737793, 5.812329292297363, -41.86197280883789)
+										) > 65
+									then
+										repeat
+											if not featureConfig.autofarmSettings.currentlyEnabled then
+												return
+											end
+
+											invokeServer({
+												Type = "ToWork",
+												Name = "PizzaPlanetDelivery",
+											})
+
+											task.wait(0.1)
+										until client:DistanceFromCharacter(
+												Vector3.new(-51.3670768737793, 5.812329292297363, -41.86197280883789)
+											) < 20
+									end
+
+									local pizzaPlanet, pizzas = getPizzaPlanet()
+									pathfind(
+										Vector3.new(
+											-51.3670768737793 + math.random(-5, 5) / 100,
+											5.812329292297363,
+											-41.86197280883789 + math.random(-5, 5) / 100
+										)
+									)
+
+									local customer = getPizza(pizzas)
+									if not customer then
+										return
+									end
+
+									pathfind(Vector3.new(-62.287613, 5.860000, -32.717072))
+
+									local moped
+									repeat
+										if not featureConfig.autofarmSettings.currentlyEnabled then
+											return
+										end
+
+										invokeServer({ Type = "UsePizzaMoped" })
+										moped = character:FindFirstChild("Vehicle_Delivery Moped")
+										task.wait(0.1)
+									until moped and moped:FindFirstChild("Body")
+
+									local body = moped.Body
+									if not body then
+										return
+									end
+
+									local oldBV = body:FindFirstChildOfClass("BodyVelocity")
+									if oldBV then
+										oldBV:Destroy()
+									end
+
+									local velocity = Instance.new("BodyVelocity", body)
+									velocity.MaxForce = Vector3.new(9e9, 250, 9e9)
+									velocity.P = 340
+									velocity.Velocity = Vector3.zero
+
+									local pathThere = PathfindingService:CreatePath({
+										AgentRadius = 1,
+										AgentHeight = 5,
+										WaypointSpacing = 1,
+										AgentCanJump = false,
+										Costs = {
+											Road = 0.001,
+											Pavement = 0.35,
+											Terrain = 50,
+											PierFences = math.huge,
+											IgnoreArea = 9e9,
+											Planks = 1.5,
+										},
+									})
+
+									pathThere:ComputeAsync(
+										humanoidRootPart.Position,
+										customer - (customer - humanoidRootPart.Position).Unit * 2.5
+									)
+
+									local pathThereWaypoints = pathThere:GetWaypoints()
+									if #pathThereWaypoints == 0 then
+										pathThere:ComputeAsync(humanoidRootPart.Position, customer)
+										pathThereWaypoints = pathThere:GetWaypoints()
+									end
+
+									for _, waypoint in next, pathThereWaypoints do
+										if not featureConfig.autofarmSettings.currentlyEnabled then
+											velocity.Velocity = Vector3.zero
+											return
+										end
+
+										local targetPos = waypoint.Position
+										local dir = (targetPos - body.Position).Unit
+										local startInit = tick()
+
+										repeat
+											if not featureConfig.autofarmSettings.currentlyEnabled then
+												velocity.Velocity = Vector3.zero
+												return
+											end
+											velocity.Velocity = dir * 34
+											body.CFrame = (body.CFrame):Lerp(
+												CFrame.lookAt(
+													body.Position,
+													body.Position + Vector3.new(dir.X, 0, dir.Z)
+												),
+												0.35
+											)
+											task.wait()
+										until (body.Position - targetPos).Magnitude <= 5.5 or (tick() - startInit) > 1
+
+										velocity.Velocity = Vector3.zero
+										if (tick() - startInit) > 1 then
+											body.CFrame = CFrame.new(targetPos)
+										end
+									end
+
+									task.wait(tonumber("0." .. math.random(3, 6)))
+									repeat
+										task.wait()
+										if not featureConfig.autofarmSettings.currentlyEnabled then
+											velocity.Velocity = Vector3.zero
+											return
+										end
+										local finalCustomer = getClosestCustomer()
+										if finalCustomer then
+											task.spawn(function() 
+											fireServer({
+												Type = "DeliverPizza",
+												Customer = finalCustomer,
+											}) 
+											end)
+										end
+									until not character:FindFirstChild("Pizza Box")
+
+									if clientStats.Job.ShiftEarnings.Value > farmStats.values.lastShift then
+										farmStats.values.totalEarnings += clientStats.Job.ShiftEarnings.Value - farmStats.values.lastShift
+										farmStats.values.lastShift = clientStats.Job.ShiftEarnings.Value
+									end
+
+									task.wait(tonumber("1." .. math.random(3, 8)))
+
+									reverseTable(pathThereWaypoints)
+									for _ = 1, 3 do
+										table.remove(pathThereWaypoints, #pathThereWaypoints)
+									end
+
+									local rotated = false
+									for _, waypoint in next, pathThereWaypoints do
+										if not featureConfig.autofarmSettings.currentlyEnabled then
+											velocity.Velocity = Vector3.zero
+											return
+										end
+
+										local targetPos =
+											Vector3.new(waypoint.Position.X, body.Position.Y, waypoint.Position.Z)
+
+										if not rotated then
+											local startCF = body.CFrame
+											local endCF = CFrame.lookAt(body.Position, targetPos)
+											for i = 1, 5 do
+												if not featureConfig.autofarmSettings.currentlyEnabled then
+													velocity.Velocity = Vector3.zero
+													return
+												end
+												local alpha = i / 5
+												body.CFrame = startCF:Lerp(endCF, alpha)
+												task.wait(0.03)
+											end
+											rotated = true
+										end
+
+										local dir = (targetPos - body.Position).Unit
+										local startInit = tick()
+
+										repeat
+											if not featureConfig.autofarmSettings.currentlyEnabled then
+												velocity.Velocity = Vector3.zero
+												return
+											end
+											velocity.Velocity = dir * 34
+											body.CFrame = (body.CFrame):Lerp(
+												CFrame.lookAt(
+													body.Position,
+													body.Position + Vector3.new(dir.X, 0, dir.Z)
+												),
+												0.35
+											)
+											task.wait()
+										until (body.Position - targetPos).Magnitude <= 5.5 or (tick() - startInit) > 1
+
+										velocity.Velocity = Vector3.zero
+										if (tick() - startInit) > 1 then
+											body.CFrame = CFrame.new(targetPos)
+										end
+									end
+
+									for i, v in pairs(game.Workspace:GetChildren()) do
+										if v.Name == "PathVisualizer" then
+											v:Destroy()
+										end
+									end
+
+									velocity:Destroy()
+									fireServer({ Type = "Detach" })
+                    end
+                end
+            end
+            end)
+
+        task.spawn(function() 
+            while task.wait() do
+               if modules.stats.Job.Value == "PizzaPlanetBaker" and featureConfig.autoBuild.SelectedJob == "PizzaPlanetBaker" and featureConfig.autofarmSettings.currentlyEnabled then
+                     moodBreakCheck()
+                    if not featureConfig.autoMood.isBoosting then
+								local station = getCurrentStation(
+									game:GetService("Workspace").Environment.Locations.City.PizzaPlanet.Interior.BakerWorkstations
+								)
+
+								if station then
+									task.wait()
+
+									pathfind(station.CounterTop.Position - station.CounterTop.CFrame.LookVector * 5.5)
+
+									local function getCrate()
+										for _, crate in
+											pairs(
+												game:GetService("Workspace").Environment.Locations.City.PizzaPlanet.Interior.IngredientCrates
+													:GetChildren()
+											)
+										do
+											if isInstanceNearPosition(crate, Vector3.new(-49.26, 2.62, -55.95), 1) then
+												return crate
+											end
+										end
+
+										return nil
+									end
+
+									local function RestockIngredients(station)
+										if station.Order.IngredientsLeft.Value == 0 then
+											pathfind(Vector3.new(-45.39, 4.46, -54.86))
+
+											local crate = getCrate()
+
+											fireServer({
+												Type = "TakeIngredientCrate",
+												Object = crate,
+											})
+
+											pathfind(
+												station.CounterTop.Position - station.CounterTop.CFrame.LookVector * 5.5
+											)
+
+											fireServer({
+												Type = "RestockIngredients",
+												Workstation = station,
+											})
+
+											task.wait(0.25)
+										end
+									end
+
+									RestockIngredients(station)
+
+									if station.Order.Value ~= "true" then
+										fireServer({
+											Type = "JobCompleted",
+											Workstation = station,
+											Order = {
+												true,
+												true,
+												true,
+												station.Order.Value,
+											},
+										})
+
+										if clientStats.Job.ShiftEarnings.Value > farmStats.values.lastShift then
+										    farmStats.values.totalEarnings += clientStats.Job.ShiftEarnings.Value - farmStats.values.lastShift
+											farmStats.values.lastShift = clientStats.Job.ShiftEarnings.Value
+										end
+									end
+								end
+							end
+                    end
+            end
+        end)
+
+        task.spawn(function() 
+            while task.wait() do
+                if modules.stats.Job.Value == "StylezHairdresser" and featureConfig.autoBuild.SelectedJob == "StylezHairdresser" and featureConfig.autofarmSettings.currentlyEnabled then
+                     moodBreakCheck()
+                     if not featureConfig.autoMood.isBoosting then
+							for _, part in pairs(game:GetService("Workspace").Environment.Locations.City.StylezHairStudio.Interior.HairdresserWorkstations:GetDescendants()) do
+								if part:IsA("BasePart") then
+									part.CanCollide = false
+								end
+						    end  
+                            
+							local station = getCurrentStation(
+								game:GetService("Workspace").Environment.Locations.City.StylezHairStudio.Interior.HairdresserWorkstations
+							)
+
+							if not station then
+							  repeat
+								task.wati()
+                                station = getCurrentStation(game:GetService("Workspace").Environment.Locations.City.StylezHairStudio.Interior.HairdresserWorkstations)
+							  until station
+						    end
+
+							if station then
+								pathfind(station.Mat.Position - Vector3.new(-2, 0, 0))
+
+								if station.Occupied.Value ~= nil then
+									local currentCustomer 
+
+									repeat
+										task.wait()
+										currentCustomer = station.Occupied.Value
+									until currentCustomer and currentCustomer:FindFirstChild("Order")
+
+									local hairValue = currentCustomer.Order.Style.Value
+									local hairColor = currentCustomer.Order.Color.Value
+
+                                    fireServer({
+                                       Type = "JobCompleted",
+                                       Order = {
+                                         hairValue,
+                                         hairColor
+                                       },
+                                       Workstation = station
+                                   })
+
+									if clientStats.Job.ShiftEarnings.Value > farmStats.values.lastShift then
+										farmStats.values.totalEarnings += clientStats.Job.ShiftEarnings.Value - farmStats.values.lastShift
+										farmStats.values.lastShift = clientStats.Job.ShiftEarnings.Value
+									end
+								
+								end
+							end
+                     end
+                end
+            end
+        end)
+	end
+
+	local skillsFarmT = newTab("Skills Farm") do
+		local skillsFarmS = skillsFarmT:Section({ Name = "Auto Skills" }) do
+			skillsFarmS:Toggle({
+				Name = "Garden Skill",
+				State = false,
+				Callback = function(state)
+					gardenFarm = state
+					if state then
+						while gardenFarm do
+							wait()
+
+							local base = getClosestObject({
+								"Large Wooden Planter",
+							})
+
+							if not base then
+								return Library:Notification({
+									Title = "Error",
+									Description = "Large Wooden Planter Required",
+									Duration = 25,
+									Color = Color3.fromRGB(93, 234, 5),
+								})
+							end
+
+							if client:DistanceFromCharacter(base.Position) > 7 then
+								pathfind(base.Position)
+							end
+
+							invokeServer({
+								Type = "PlantObject",
+								Target = base,
+								Name = "Rough Tree",
+							})
+
+							task.wait(4)
+
+							fireServer({
+								Type = "Interact",
+								Target = base.ItemHolder["Rough Tree"],
+								Path = "2",
+							})
+							task.wait(13)
+						end
+					end
+				end,
+			})
+		end
+	end
+
+	local vehicleT = newTab("Vehicle") do
+		local vehichleS = vehicleT:Section({ Name = "Car mods" }) do 
+			vehichleS:Slider({
+				Name = "Forward Speed",
+				Min = 0,
+				Max = 100,
+				Default = 50,
+				Decimals = 1,
+				Callback = function(value)
+					for i, v in next, modules.vehicleman do
+						v.ForwardSpeed = value
+					end
+				end,
+			})
+
+			vehichleS:Slider({
+				Name = "Reverse Speed",
+				Min = 0,
+				Max = 100,
+				Default = 50,
+				Decimals = 1,
+				Callback = function(value)
+					for i, v in next, modules.vehicleman do
+						v.ReverseSpeed = value
+					end
+				end,
+			})
+
+			vehichleS:Slider({
+				Name = "Turn Speed",
+				Min = 0,
+				Max = 100,
+				Default = 12,
+				Decimals = 1,
+				Callback = function(value)
+					for i, v in next, modules.vehicleman do
+						v.TurnSpeed = value
+					end
+				end,
+			})
+		end
+	end
+
+	local webhookT = newTab("Notifications") do
+		local webhookS = webhookT:Section({ Name = "Webhook config" }) do 
+					webhookS:Textbox({
+			Name = "Webhook link",
+			Default = "link...",
+			Callback = function(text)
+				featureConfig.webhookSettings.webhook = text
+			end,
+		})
+
+		webhookS:Slider({
+			Name = "Webhook Delay",
+			Min = 0,
+			Max = 20,
+			Default = 5,
+			Decimals = 1,
+			Callback = function(value)
+				featureConfig.webhookSettings.webhookdelay = value
+			end,
+		})
+
+		webhookS:Toggle({
+			Name = "Enable",
+			State = false,
+			Callback = function(state)
+				featureConfig.webhookSettings.enabled = state
+				currentlyEnabled = featureConfig.webhookSettings.enabled
+				if state then
+					while currentlyEnabled do
+						task.wait()
+
+						local messageId
+
+						if string.find(featureConfig.webhookSettings.webhook, "https://discord.com/api/webhooks/") then
+							messageId = HttpService:JSONDecode(http_request({
+								Url = featureConfig.webhookSettings.webhook .. "?wait=true",
+								Method = "POST",
+								Body = HttpService:JSONEncode({
+									username = "Synix",
+									embeds = {
+										{
+											color = 5814783,
+											title = "Starting AutoFarm...",
+											description = "Initializing...",
+											timestamp = DateTime.now():ToIsoDate(),
+											footer = { text = "Synix" },
+										},
+									},
+								}),
+								Headers = { ["Content-Type"] = "application/json" },
+							}).Body).id
+
+							while task.wait(featureConfig.webhookSettings.webhookdelay) do
+								http_request({
+									Url = ("%s/messages/%s"):format(featureConfig.webhookSettings.webhook, messageId),
+									Method = "PATCH",
+									Body = HttpService:JSONEncode({
+										username = "Synix",
+										embeds = {
+											{
+												title = "Synix AutoFarm Logs",
+												color = 5814783,
+												fields = {
+													{
+														name = "Shift Money",
+														value = beautifyMoney(
+															tonumber(modules.stats.Job.ShiftEarnings.Value)
+														),
+													},
+													{
+														name = "Total Money",
+														value = beautifyMoney(
+															tonumber(modules.stats.Money.Value)
+														),
+													},
+												},
+												timestamp = DateTime.now():ToIsoDate(),
+												footer = { text = "Synix Premium" },
+											},
+										},
+									}),
+									Headers = { ["Content-Type"] = "application/json" },
+								})
+							end
+						end
+
+						if not currentlyEnabled then
+							break
+						end
+					end
+				end
+			end,
+		})
+		end
+	end
+
+	local configT = newTab("Configs") do
+		local legitConfigS = configT:Section({ Name = "Legit Config" }) do
+			legitConfigS:Label({
+				Text1 = "Auto Mood",
+				Text2 = "Enabled",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			legitConfigS:Label({
+				Text1 = "Auto Mood %",
+				Text2 = "20%",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			legitConfigS:Label({
+				Text1 = "Work Time",
+				Text2 = "180m",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			legitConfigS:Label({
+				Text1 = "Break Time",
+				Text2 = "120m",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			legitConfigS:Button({
+				Name = "Use Config",
+				Callback = function()
+					featureConfig.autofarmSettings.breaktime = 120
+					featureConfig.autofarmSettings.worktime = 180
+					breakTimeBox:Set("120")
+					workTimeBox:Set("180")
+					task.spawn(function() 
+					breaksToggle:Set(true)
+					autoMoodToggle:Set(true)
+					end)
+
+					Library:Notification({
+						Title = "Synix",
+						Description = "loaded",
+						Duration = 25,
+						Color = Color3.fromRGB(93, 234, 5),
+					})
+				end,
+			})
+		end
+
+		local semitlegitConfig = configT:Section({ Name = "Semi Legit Config" }) do
+			semitlegitConfig:Label({
+				Text1 = "Auto Mood",
+				Text2 = "Enabled",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			semitlegitConfig:Label({
+				Text1 = "Auto Mood %",
+				Text2 = "20%",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			semitlegitConfig:Label({
+				Text1 = "Work Time",
+				Text2 = "120m",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			semitlegitConfig:Label({
+				Text1 = "Break Time",
+				Text2 = "30m",
+				Text1Color = Color3.fromRGB(255, 255, 255),
+				Text2Color = Color3.fromRGB(93, 234, 5),
+			})
+
+			semitlegitConfig:Button({
+				Name = "Use Config",
+				Callback = function()
+					featureConfig.autofarmSettings.breaktime = 30
+					featureConfig.autofarmSettings.worktime = 120
+					breakTimeBox:Set("30")
+					workTimeBox:Set("120")
+
+					task.spawn(function() 
+					breaksToggle:Set(true)
+					autoMoodToggle:Set(true)
+					end)
+
+					Library:Notification({
+						Title = "Synix",
+						Description = "loaded",
+						Duration = 25,
+						Color = Color3.fromRGB(93, 234, 5),
+					})
+				end,
+			})
+		end
+	end
+
+	local miscT = newTab("Misc") do
+		local trollS = miscT:Section({ Name = "Troll" }) do
+			trollS:Button({
+				Name = "Open All doors",
+				Callback = function()
+					toggleAllDoors(true);
+				end,
+			})
+
+			trollS:Button({
+				Name = "Close All doors",
+				Callback = function()
+					toggleAllDoors(false);
+				end,
+			})
+		end
+
+		local utilS = miscT:Section({ Name = "Random" }) do
+			utilS:Button({
+				Name = "Remove Stink",
+				Callback = function()
+					for i, v in pairs(client.Character.HumanoidRootPart:GetChildren()) do
+						if v:IsA("ParticleEmitter") then
+							v:Destroy()
+						end
+					end
+
+					player.Character.Animate.run.RunAnim.AnimationId = "http://www.roblox.com/asset/?id=913376220"
+					player.Character.Animate.walk.RunAnim.AnimationId = "http://www.roblox.com/asset/?id=2216474837"
+					player.Character.Animate.idle.Animation1.AnimationId = "http://www.roblox.com/asset/?id=507766388"
+					player.Character.Animate.idle.Animation2.AnimationId = "http://www.roblox.com/asset/?id=507766666"
+
+					spawn(function()
+						while task.wait() do
+							client.Character.Humanoid.WalkSpeed = 16
+						end
+					end)
+				end,
+			})
+		end
+
+		local gardenFarmS = miscT:Section({ Name = "Garden Farm" }) do
+			gardenFarmS:Dropdown({
+				Name = "Garden Item",
+				Options = { "Berry Bush" },
+				Default = "Berry Bush",
+				Callback = function(selected)
+					featureConfig.autoHarvest.itemToHarvest = selected
+				end,
+			})
+
+			local harvestToggle = gardenFarmS:Toggle({
+				Name = "Harvest While On Break",
+				State = false,
+				Callback = function(state)
+					featureConfig.autoHarvest.enabled = state
+				end,
+			})
+		end
+	end
+end
